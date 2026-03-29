@@ -17,20 +17,21 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 
 ## Add the bot to your Discord server
 
-There is no in-app “add bot” screen in this repo — Discord handles invites.
+### From the web (recommended)
 
-1. Put your app’s **`CLIENT_ID`** in `.env` (same value as **Application ID** in the [Developer Portal](https://discord.com/developers/applications)).
-2. From the repo root run:
+1. In `.env`, set **`NEXT_PUBLIC_DISCORD_CLIENT_ID`** to the same value as **`CLIENT_ID`** (public Application ID).
+2. Start the web app (`npm run dev:web` or `npm run dev`).
+3. Open **`/add-bot`** (e.g. `http://localhost:3100/add-bot` if you use `WEB_PORT=3100`) and click **Add to Discord**.
 
-   ```bash
-   npm run discord:invite-url
-   ```
+### From the terminal (optional)
 
-   Copy the printed URL, open it in your browser, choose a server where you have **Manage Server**, and authorize.
+```bash
+npm run discord:invite-url
+```
 
-**Or** build the link manually: [Developer Portal](https://discord.com/developers/applications) → your app → **OAuth2** → **URL Generator** → scopes **`bot`** + **`applications.commands`** → permissions at least **Connect**, **Speak**, **Use Voice Activity**, **Send Messages**, **Embed Links**, **Read Message History**, **View Channels**.
+**Or** use the [Developer Portal](https://discord.com/developers/applications) → **OAuth2** → **URL Generator** with scopes **`bot`** + **`applications.commands`**.
 
-After the bot joins, it appears in the member list. **Join a voice channel yourself**, then (once slash commands exist in Phase 3) use `/` in a text channel the bot can read. The bot does not “join a channel” until someone runs a play command or you implement auto-join.
+After the bot joins, it appears in the member list. **Join a voice channel yourself**, then (once slash commands exist in Phase 3) use `/` in a text channel the bot can read.
 
 ## GSD / planning
 
