@@ -1,0 +1,82 @@
+<!-- gsd-project-start source:PROJECT.md -->
+## Project
+
+**DJ Ramu Kaka — Discord Music Bot System**
+
+A full-stack **Discord music bot** with **playlists**, **Lavalink-backed streaming** (no stored audio), a **Next.js admin/dashboard** on Vercel, and a **Node.js API** intended for an Oracle VPS. Normal users authenticate with **Discord OAuth**; **admins** are gated by Discord user IDs in environment configuration. The repo target layout is a monorepo: `apps/bot`, `apps/api`, `apps/web`, shared `packages/*`, and `services/lavalink` (plus optional `services/ai` for future use). Brand asset: `logo-bg.png` in the project root (per `init.md`).
+
+**Core Value:** Guild members can **reliably play music from names or URLs** with a **queue**, **Lavalink streaming**, and **playlist workflows** (Discord + web), without the system storing audio files—only metadata and analytics events.
+
+### Constraints
+
+- **Tech**: Node.js for bot and API; Next.js for web; MongoDB; Lavalink (Java); discord.js + Lavalink client stack (to be finalized in implementation)
+- **Hosting**: Web on Vercel; API + bot + Lavalink on VPS (Oracle per vision)
+- **Compliance / cost**: Free-tier friendly where possible; no audio file storage
+- **Security**: Secrets only via env; admin checks server-side using `ADMIN_IDS`
+<!-- gsd-project-end -->
+
+<!-- gsd-stack-start source:research/STACK.md -->
+## Technology Stack
+
+## Recommended Stack
+### Core Technologies
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Node.js | 20 LTS | Bot + API runtime | discord.js and ecosystem target modern Node |
+| discord.js | v14.x | Discord gateway + interactions | De facto standard; interactions, components, voice helpers |
+| Lavalink | 4.x compatible client | Audio streaming | Offloads decoding/streaming; no local FFmpeg burden on bot process |
+| MongoDB | 7+ / Atlas | Playlists + analytics | Document model fits nested playlists and event logs |
+| Next.js | 15.x (App Router) | Dashboard on Vercel | OAuth callback pages, server components for API proxy patterns |
+| TypeScript | 5.x | Shared types across monorepo | Safer contracts between bot, API, and packages |
+### Supporting Libraries
+| Library | Purpose | When to Use |
+|---------|---------|-------------|
+| `shoukaku` or `lavalink-client` | Lavalink node connection | Bot ↔ Lavalink protocol |
+| `mongoose` or native driver | Mongo access | `packages/db` |
+| `next-auth` or custom OAuth | Discord OAuth for web | Session for dashboard |
+| `zod` | Env + API validation | Shared in `packages/config` / API |
+### Development Tools
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| pnpm workspaces | Monorepo linking | Matches `apps/*` + `packages/*` |
+| Java 17+ | Run Lavalink.jar | Local + VPS |
+| Docker (optional) | Lavalink/API compose | Simplifies local parity |
+## What NOT to Use (v1)
+- **yt-dlp / direct download pipelines in the bot** — conflicts with "lightweight bot" + Lavalink-first design unless explicitly needed as Lavalink source plugin
+- **Storing audio on disk or S3 for playback** — out of scope per product rules
+## Installation (high level)
+<!-- gsd-stack-end -->
+
+<!-- gsd-conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+Conventions not yet established. Will populate as patterns emerge during development.
+<!-- gsd-conventions-end -->
+
+<!-- gsd-architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+Architecture not yet mapped. Follow existing patterns found in the codebase.
+<!-- gsd-architecture-end -->
+
+<!-- gsd-workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- gsd-workflow-end -->
+
+
+
+<!-- gsd-profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- gsd-profile-end -->
