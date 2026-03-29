@@ -15,6 +15,23 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
    - `npm run dev:bot`
    - `npm run dev:web`
 
+## Add the bot to your Discord server
+
+There is no in-app “add bot” screen in this repo — Discord handles invites.
+
+1. Put your app’s **`CLIENT_ID`** in `.env` (same value as **Application ID** in the [Developer Portal](https://discord.com/developers/applications)).
+2. From the repo root run:
+
+   ```bash
+   npm run discord:invite-url
+   ```
+
+   Copy the printed URL, open it in your browser, choose a server where you have **Manage Server**, and authorize.
+
+**Or** build the link manually: [Developer Portal](https://discord.com/developers/applications) → your app → **OAuth2** → **URL Generator** → scopes **`bot`** + **`applications.commands`** → permissions at least **Connect**, **Speak**, **Use Voice Activity**, **Send Messages**, **Embed Links**, **Read Message History**, **View Channels**.
+
+After the bot joins, it appears in the member list. **Join a voice channel yourself**, then (once slash commands exist in Phase 3) use `/` in a text channel the bot can read. The bot does not “join a channel” until someone runs a play command or you implement auto-join.
+
 ## GSD / planning
 
 - Project context: [`.planning/PROJECT.md`](./.planning/PROJECT.md)
