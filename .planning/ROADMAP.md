@@ -31,9 +31,9 @@ Build the monorepo foundation and data contracts first, stand up the authenticat
 
 Plans:
 
-- [ ] 01-01: Scaffold monorepo folders and workspace config
-- [ ] 01-02: Implement `packages/db` models and validation
-- [ ] 01-03: Lavalink `services/lavalink` docs + local run instructions
+- [x] 01-01: Scaffold monorepo folders and workspace config
+- [x] 01-02: Implement `packages/db` models and validation
+- [x] 01-03: Lavalink `services/lavalink` docs + local run instructions
 
 ### Phase 2: API & auth
 
@@ -124,7 +124,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/3 | Not started | - |
+| 1. Foundation | 3/3 | Plans done — verify & transition | - |
 | 2. API & auth | 0/3 | Not started | - |
 | 3. Discord bot | 0/4 | Not started | - |
 | 4. Web dashboard | 0/3 | Not started | - |
