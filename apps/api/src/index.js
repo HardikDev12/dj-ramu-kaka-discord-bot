@@ -65,8 +65,17 @@ async function start() {
     console.warn('MONGO_URI not set — playlist/analytics routes return 503 until configured');
   }
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`API listening on http://localhost:${port}`);
+  });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `Port ${port} is already in use. Stop the other process (e.g. old "npm run dev") or set API_PORT in .env.`
+      );
+      process.exit(1);
+    }
+    throw err;
   });
 }
 
