@@ -3,6 +3,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { Shoukaku, Connectors } = require('shoukaku');
+const { registerSlashCommands } = require('./register-commands');
+const { handleMusicCommand } = require('./handlers/music');
+
 const token = process.env.DISCORD_TOKEN;
 
 const client = new Client({
@@ -32,7 +35,6 @@ function isLavalinkUnreachable(error) {
   );
 }
 
-/** While Lavalink is down, Shoukaku retries and emits many errors — show one hint only. */
 let lavalinkDownMuted = false;
 shoukaku.on('error', (nodeName, error) => {
   if (isLavalinkUnreachable(error)) {
@@ -60,9 +62,35 @@ shoukaku.on('ready', (nodeName) => {
   lavalinkDownMuted = false;
 });
 
-client.once(Events.ClientReady, () => {
-  console.log(`Bot logged in as ${client.user.tag}`);
-  console.log('Slash commands and playback: implement in Phase 3 (see .planning/ROADMAP.md)');
+client.once(Events.ClientReady, async (c) => {
+  console.log(`Bot logged in as ${c.user.tag}`);
+  try {
+    await registerSlashCommands();
+  } catch (err) {
+    console.error('Slash command registration failed:', err.message);
+    console.error('Fix .env or run: npm run register-commands -w @music-bot/bot');
+  }
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  try {
+    await handleMusicCommand(interaction, shoukaku);
+  } catch (err) {
+    console.error('[interaction]', err);
+    const text = 'Something went wrong.';
+    try {
+      if (interaction.deferred && !interaction.replied) {
+        await interaction.editReply(text);
+      } else if (interaction.replied) {
+        await interaction.followUp({ content: text, ephemeral: true });
+      } else {
+        await interaction.reply({ content: text, ephemeral: true });
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 });
 
 if (!token) {

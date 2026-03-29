@@ -31,7 +31,27 @@ npm run discord:invite-url
 
 **Or** use the [Developer Portal](https://discord.com/developers/applications) → **OAuth2** → **URL Generator** with scopes **`bot`** + **`applications.commands`**.
 
-After the bot joins, it appears in the member list. **Join a voice channel yourself**, then (once slash commands exist in Phase 3) use `/` in a text channel the bot can read.
+After the bot joins, it appears in the member list.
+
+## Slash commands (music testing)
+
+1. **Lavalink** must be running (`services/lavalink` + Java 17+).
+2. Set **`DISCORD_GUILD_ID`** in `.env` to your server’s ID (Discord → Settings → Advanced → Developer Mode → right‑click server → **Copy Server ID**). Guild commands show up in **seconds**. If you leave it empty, commands register **globally** and can take **~1 hour** to appear.
+3. Restart the bot (`npm run dev:bot`). It registers commands on startup. You can also run:
+
+   ```bash
+   npm run register-commands -w @music-bot/bot
+   ```
+
+4. In the server, **join a voice channel**, then in text type **`/`** and use:
+
+   | Command | What it does |
+   |---------|----------------|
+   | `/play` | URL or search. Default Lavalink config has **YouTube off** — try a direct **HTTP/HTTPS** stream URL or **`scsearch:artist track`** (SoundCloud). |
+   | `/pause` / `/resume` | Transport |
+   | `/skip` | Next in queue or stop |
+   | `/queue` / `/nowplaying` | Queue / current track |
+   | `/stop` | Stop, clear queue, leave voice |
 
 ## GSD / planning
 
