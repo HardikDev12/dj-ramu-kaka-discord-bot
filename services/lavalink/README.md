@@ -1,28 +1,13 @@
-# Lavalink (local / VPS)
+# Lavalink
 
-The bot streams audio through **Lavalink** — no audio files are stored in this repo.
-
-## Prerequisites
-
-- **Java 17+** (`java -version`)
-- **Lavalink.jar** from [Lavalink releases](https://github.com/lavalink-devs/Lavalink/releases) (use a v4 build compatible with your client library)
-
-## Setup
-
-1. Copy `application.yml.example` to `application.yml` (this path is gitignored).
-2. Download `Lavalink.jar` into this folder (`services/lavalink/` is gitignored for the JAR — keep it local).
-3. Align the **password** and **port** with root `.env` / `.env.example` (`LAVALINK_PASSWORD`, `LAVALINK_PORT`).
-
-## Run
+1. Install **Java 17+**.
+2. Ensure `application.yml` `server.password` matches your root `.env` `LAVALINK_PASSWORD` if you add a password block per your JAR’s template.
+3. Place `Lavalink.jar` at the **repository root** (already present in this project).
+4. From this directory:
 
 ```bash
 cd services/lavalink
-java -jar Lavalink.jar
+java -jar ../../Lavalink.jar
 ```
 
-Default HTTP: `http://127.0.0.1:2333` — the bot will use `LAVALINK_HOST` / `LAVALINK_PORT` in Phase 3.
-
-## Notes
-
-- YouTube / other sources depend on **Lavalink plugins** and Lavalink version; add plugins under `lavalink.plugins` in `application.yml` per upstream docs.
-- Production: run Lavalink on the same VPS as the bot or a private network with firewall rules — do not expose the Lavalink port publicly without TLS and auth.
+Your Lavalink distribution may ship a fuller `application.yml` (password, sources). Merge those settings with this file as needed.

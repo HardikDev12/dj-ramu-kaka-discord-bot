@@ -1,21 +1,15 @@
 {
-  "name": "@djramu/api",
+  "name": "@music-bot/api",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "node --import tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
   },
   "dependencies": {
-    "@djramu/config": "workspace:*",
-    "@djramu/db": "workspace:*",
-    "@djramu/utils": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.10",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "@music-bot/db": "0.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
   }
 }

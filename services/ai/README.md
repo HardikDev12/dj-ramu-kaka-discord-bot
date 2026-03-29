@@ -1,3 +1,3 @@
-# AI service (future)
+# AI service (optional)
 
-Placeholder for **AI-ready** features from the architecture doc. No runtime here in v1.
+Reserved for future milestones (`init.md`). No runtime in v1.

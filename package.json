@@ -1,18 +1,21 @@
 {
-  "name": "music-bot-system",
+  "name": "dj-ramu-kaka",
   "private": true,
-  "packageManager": "pnpm@9.15.0",
-  "engines": {
-    "node": ">=20"
-  },
+  "description": "Discord music bot monorepo — web, API, bot, Lavalink (see init.md)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev:api": "pnpm --filter @djramu/api dev",
-    "dev:bot": "pnpm --filter @djramu/bot dev",
-    "dev:web": "pnpm --filter @djramu/web dev",
-    "build": "pnpm --filter @djramu/web run build",
-    "typecheck": "pnpm -r run typecheck"
+    "dev": "concurrently -n api,bot,web -c blue,magenta,green \"npm run dev -w @music-bot/api\" \"npm run dev -w @music-bot/bot\" \"npm run dev -w @music-bot/web\"",
+    "dev:api": "npm run dev -w @music-bot/api",
+    "dev:bot": "npm run dev -w @music-bot/bot",
+    "dev:web": "npm run dev -w @music-bot/web"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

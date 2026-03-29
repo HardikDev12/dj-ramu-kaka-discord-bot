@@ -1,11 +1,12 @@
-node_modules
-dist
-.next
+node_modules/
+# Keep Lavalink JAR local — download from https://github.com/lavalink-devs/Lavalink/releases
+Lavalink.jar
 .env
 .env.local
+.next/
+out/
+dist/
+build/
 *.log
 .DS_Store
-*.tsbuildinfo
-Lavalink.jar
-services/lavalink/Lavalink.jar
-services/lavalink/application.yml
+Thumbs.db

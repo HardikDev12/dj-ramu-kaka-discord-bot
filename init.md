@@ -4,29 +4,33 @@
 
 ## 🧠 Overview
 Complete system including:
-- Discord Bot
-- Playlist system
-- Admin dashboard
-- Analytics
-- AI-ready structure
+- **Web** — separate Next.js app (dashboard UI only; not the API)
+- **API** — separate Express backend (REST/auth/data; not the bot process)
+- **Bot** — separate Discord client (commands, voice, Lavalink player; bot-specific code only)
+- Playlist system, admin dashboard, analytics, AI-ready structure
+
+**Do not merge** web + API + bot into one app or one folder. Each has its own `package.json`, dev server, and deployment target.
 
 ---
 
 ## 🏗️ Architecture
 
+Three **independent** runtimes that talk over HTTP and shared MongoDB:
+
+| Layer | What it is | Not |
+|-------|------------|-----|
+| **Web** (`apps/web`) | Next.js frontend, Discord OAuth UI, admin panels | Not the API server; not Discord gateway code |
+| **API** (`apps/api`) | Express routes, controllers, services, auth checks | Not Next.js pages; not the Discord bot process |
+| **Bot** (`apps/bot`) | Discord.js, slash commands, voice, Lavalink client | Not serving the website; not replacing the REST API |
+
 ```
-User (Discord / Web)
-        ↓
-Frontend (Next.js - Vercel)
-        ↓
-API (Node.js - Oracle VPS)
-        ↓
-Bot Service (Node.js)
-        ↓
-Lavalink (Audio Engine)
-        ↓
-Discord Voice
+Browser → Web (Next.js) ──HTTP──→ API (Express) ──→ MongoDB (metadata)
+Discord  → Bot (Discord.js) ──→ MongoDB / API (your choice per feature) ──→ Lavalink (:2333) ──→ voice
 ```
+
+Web never hosts bot logic. API never replaces the Discord gateway. Bot never serves the Next.js UI.
+
+The **web** is only the UI; it never runs bot or Lavalink code. The **API** is the shared backend for dashboards and (optionally) the bot. The **bot** is Discord- and voice-specific. **Lavalink** is a separate process, not embedded in Node.
 
 ---
 
@@ -50,25 +54,26 @@ ADMIN_IDS=your_discord_id
 
 ---
 
-## 📁 Folder Structure
+## 📁 Folder Structure (monorepo, separate apps)
 
 ```
-music-bot-system/
+dj-ramu-kaka/                    # root: npm workspaces, one `npm run dev` for all apps
 │
 ├── apps/
-│   ├── bot/
-│   ├── api/
-│   └── web/
+│   ├── web/      → Next.js only (frontend / dashboard)
+│   ├── api/      → Express only (HTTP API)
+│   └── bot/      → Discord bot only (gateway + voice + player)
 │
 ├── packages/
-│   ├── db/
-│   ├── utils/
-│   └── config/
+│   ├── db/       → MongoDB models + connection (shared)
+│   ├── config/   → shared env / constants
+│   └── utils/    → shared helpers
 │
 ├── services/
-│   ├── lavalink/
-│   └── ai/
+│   ├── lavalink/ → Java Lavalink (separate process)
+│   └── ai/       → optional AI service (separate)
 │
+├── package.json  # workspaces: apps/*, packages/*
 ├── .env
 └── README.md
 ```
@@ -206,10 +211,11 @@ npm run dev
 
 ## ⚡ Key Rules
 
+- ❌ Do NOT merge `apps/web`, `apps/api`, and `apps/bot` into one app or one process
 - ❌ Do NOT store audio files
-- ✅ Store only metadata
+- ✅ Store only metadata in MongoDB
 - ✅ Use Lavalink for streaming
-- ✅ Keep bot lightweight
+- ✅ Keep the bot focused on Discord + voice; keep HTTP concerns in the API
 
 ---
 
