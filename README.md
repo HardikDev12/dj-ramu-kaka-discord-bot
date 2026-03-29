@@ -7,13 +7,17 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 1. Copy `.env.example` → `.env` and fill values ([external setup](#what-you-need-externally)).
 2. Install: `npm install` (repo root).
 3. Start MongoDB locally or use Atlas. Verify: `npm run db:ping` (needs `MONGO_URI` in `.env`).
-4. **Lavalink:** Download `Lavalink.jar` from [releases](https://github.com/lavalink-devs/Lavalink/releases/latest) into `services/lavalink/`, then `cd services/lavalink` and run `java -jar Lavalink.jar` (**Java 17+**, not Java 8). See `services/lavalink/README.md`.
-5. If **port 3000** is busy (Next.js), set `WEB_PORT` (e.g. `3100`) in `.env` and set **`WEB_ORIGIN`** to the same host/port (e.g. `http://localhost:3100`) so API CORS + OAuth redirects stay correct.
-6. In separate terminals (or `npm run dev` for all Node apps):
+4. **Lavalink JAR:** Download `Lavalink.jar` from [releases](https://github.com/lavalink-devs/Lavalink/releases/latest) into `services/lavalink/` (**Java 17+** on your PATH — not Java 8). See `services/lavalink/README.md`.
+5. If **port 3000** is busy (Next.js), set `WEB_PORT` (e.g. `3100`) in `.env` and set **`WEB_ORIGIN`** to match.
+6. **One command** — API, bot, web, and Lavalink together:
 
-   - `npm run dev:api`
-   - `npm run dev:bot`
-   - `npm run dev:web`
+   ```bash
+   npm run dev
+   ```
+
+   To run only the three Node apps (Lavalink already running elsewhere): `npm run dev:no-lava`.
+
+   **MongoDB** is still its own process (local install or Atlas); the API starts without it but playlist routes need `MONGO_URI`.
 
 ## Add the bot to your Discord server
 

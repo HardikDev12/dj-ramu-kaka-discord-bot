@@ -184,7 +184,15 @@ ADMIN_IDS=your_id
 
 ## 🚀 Local Setup
 
-### Lavalink
+### All-in-one (monorepo root)
+Requires **Java 17+** on PATH and `Lavalink.jar` in `services/lavalink/`. MongoDB is separate if you use playlists.
+```
+npm install
+npm run dev
+```
+Starts API, bot, web, and Lavalink. Use `npm run dev:no-lava` if Lavalink runs in another terminal.
+
+### Lavalink (manual)
 Download `Lavalink.jar` from [Lavalink releases](https://github.com/lavalink-devs/Lavalink/releases/latest) into `services/lavalink/`, then:
 ```
 cd services/lavalink
