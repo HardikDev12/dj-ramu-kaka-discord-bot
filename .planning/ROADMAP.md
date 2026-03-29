@@ -1,131 +1,133 @@
-# Roadmap: DJ Ramu Kaka — Discord Music Bot System
+# Roadmap: DJ Ramu Kaka — Music Bot System
 
 ## Overview
 
-Build the monorepo foundation and data contracts first, stand up the authenticated API, deliver the Lavalink-backed bot experience, add the Next.js dashboard and admin views, then close the loop with cross-host security and deployment documentation. Phases follow dependency order: **Foundation → API → Bot → Web → Launch**.
+Deliver the three-app monorepo with shared MongoDB models and Lavalink configuration first, then the Express API (OAuth + playlists + analytics ingestion), then the Discord bot with full playback and playlist UX, then the Next.js dashboard, and finally admin analytics and control features that tie API and bot together.
 
 ## Phases
 
-- [ ] **Phase 1: Foundation** — Monorepo, Mongo schemas, Lavalink local, env templates, non-functional guarantees (no audio storage)
-- [ ] **Phase 2: API & auth** — Discord OAuth sessions, playlist + analytics APIs, admin routes with `ADMIN_IDS`
-- [ ] **Phase 3: Discord bot** — Lavalink playback, queue/transport, components, playlist command suite backed by persistence
-- [ ] **Phase 4: Web dashboard** — Next.js on Vercel: login, playlist management, admin analytics/control UI
-- [ ] **Phase 5: Launch readiness** — Production security between hosts, README runbooks, end-to-end validation
+- [ ] **Phase 1: Foundation & shared packages** — Workspaces, `@music-bot/*`, DB schemas, Lavalink config docs  
+- [ ] **Phase 2: API core** — Express app, OAuth, playlist CRUD, analytics write path, health  
+- [ ] **Phase 3: Bot & Lavalink** — discord.js + Shoukaku, slash commands, queue, buttons/playlist flows  
+- [ ] **Phase 4: Web dashboard** — Next.js auth against API, playlist UI  
+- [ ] **Phase 5: Admin & analytics UI** — Totals, user views, admin playback controls, global playlist management  
 
-## Phase Details
+## Phase details
 
-### Phase 1: Foundation
+### Phase 1: Foundation & shared packages
 
-**Goal:** Runnable skeleton with database contracts and Lavalink dev story; no feature UI yet.
-**Depends on:** Nothing (first phase)
-**Requirements:** INFRA-01, INFRA-02, DB-01, DB-02, DB-03, LAV-01, NFR-01, NFR-02
-**UI hint**: no
-**Success Criteria** (what must be TRUE):
+**Goal:** Runnable monorepo skeleton with shared database layer and documented Lavalink setup.  
+**Depends on:** Nothing  
+**Requirements:** INFRA-01, INFRA-02, INFRA-03  
+**Success criteria:**
 
-1. `pnpm` (or chosen package manager) installs all workspaces without errors
-2. Playlist and analytics shapes are defined in code and documented
-3. Lavalink starts locally and bot/API configs can point at it via env
-4. `.env.example` exists and matches variables listed in `init.md` (plus OAuth secrets needed for later phases)
+1. `npm install` at root installs all workspaces without errors  
+2. `@music-bot/db` can connect to MongoDB using `MONGO_URI` and export models  
+3. Developer can start Lavalink using root `Lavalink.jar` and `services/lavalink/application.yml` instructions  
 
-**Plans:** TBD (set during `/gsd-plan-phase 1`)
+**UI hint:** no  
 
-Plans:
-
-- [x] 01-01: Scaffold monorepo folders and workspace config
-- [x] 01-02: Implement `packages/db` models and validation
-- [x] 01-03: Lavalink `services/lavalink` docs + local run instructions
-
-### Phase 2: API & auth
-
-**Goal:** HTTP API with Discord OAuth and secure admin operations for later bot wiring.
-**Depends on:** Phase 1
-**Requirements:** API-01, API-02, API-03, API-04, API-05
-**UI hint**: no
-**Success Criteria** (what must be TRUE):
-
-1. User can complete OAuth and call an authenticated `/me`-style endpoint
-2. CRUD on own playlists returns correct ownership errors for others' data
-3. Analytics ingest endpoint accepts events the bot will emit
-4. Non-admin receives 403 on admin routes; admin succeeds when `ADMIN_IDS` matches
-
-**Plans:** TBD
+**Plans:** 2 plans  
 
 Plans:
 
-- [ ] 02-01: OAuth session layer and user binding
-- [ ] 02-02: Playlist REST (or tRPC) routes + Mongo persistence
-- [ ] 02-03: Admin routes + bot control contract (HTTP or queue — as planned)
+- [ ] 01-01: Workspace layout, root scripts, `.env.example`, `.gitignore`  
+- [ ] 01-02: Mongoose models + Lavalink `application.yml` + README runbook  
 
-### Phase 3: Discord bot
+### Phase 2: API core
 
-**Goal:** Full guild playback experience with queue, components, and playlists.
-**Depends on:** Phase 1–2 (Phase 2 required if bot reads playlists via API; adjust if shared DB only)
-**Requirements:** BOT-01, BOT-02, BOT-03, BOT-04, BOT-05
-**UI hint**: yes (Discord components)
-**Success Criteria** (what must be TRUE):
+**Goal:** Authenticated REST API for playlists and analytics events.  
+**Depends on:** Phase 1  
+**Requirements:** API-01, API-02, API-03, API-05  
+**Success criteria:**
 
-1. Play command streams audio in a voice channel via Lavalink
-2. Pause/skip/stop behave consistently with documented rules
-3. Buttons/dropdowns function without stale message errors under normal use
-4. Playlist create/add/play flows persist and match web-visible data
+1. `GET /health` returns 200 JSON  
+2. Discord OAuth completes and session/token works for subsequent API calls  
+3. User can CRUD own playlists via API; payloads match metadata-only rule  
+4. Play events can be recorded in the analytics collection  
 
-**Plans:** TBD
+**UI hint:** no  
+
+**Plans:** 3 plans  
 
 Plans:
 
-- [ ] 03-01: Lavalink client wiring + play/search
-- [ ] 03-02: Queue + transport commands
-- [ ] 03-03: Message components + playlist UX
-- [ ] 03-04: Integration tests or manual test script for voice (documented)
+- [ ] 02-01: Express bootstrap, CORS, error middleware, health  
+- [ ] 02-02: Discord OAuth routes + session strategy  
+- [ ] 02-03: Playlist + analytics routes wired to `@music-bot/db`  
+
+### Phase 3: Bot & Lavalink
+
+**Goal:** Production-capable music bot connected to Lavalink with core commands and rich controls.  
+**Depends on:** Phase 2 (for playlist data; may stub read from DB directly if API not yet called)  
+**Requirements:** BOT-01, BOT-02, BOT-03, BOT-04, BOT-05  
+**Success criteria:**
+
+1. Bot stays connected and responds to registered slash commands  
+2. Play command joins voice and audio is heard when Lavalink is healthy  
+3. Pause/skip/stop/queue behave consistently across guilds  
+4. Buttons/select menus work for transport and playlist pickers  
+5. Playlist add/play flows use stored playlist metadata  
+
+**UI hint:** no (Discord UI components only)  
+
+**Plans:** 3 plans  
+
+Plans:
+
+- [ ] 03-01: Client, intents, Shoukaku nodes, slash command registration  
+- [ ] 03-02: Play/queue/pause/skip/stop implementation  
+- [ ] 03-03: Buttons, dropdown playlist selector, playlist CRUD from Discord  
 
 ### Phase 4: Web dashboard
 
-**Goal:** Vercel-hosted UI for users and admins consuming the API.
-**Depends on:** Phase 2 (Phase 3 for realistic E2E with live playback optional but recommended)
-**Requirements:** WEB-01, WEB-02, WEB-03, WEB-04
-**UI hint**: yes
-**Success Criteria** (what must be TRUE):
+**Goal:** Next.js UI for login and playlist management.  
+**Depends on:** Phase 2  
+**Requirements:** WEB-01, WEB-02  
+**Success criteria:**
 
-1. Discord login works in deployed/preview environment with correct redirects
-2. User can perform full playlist lifecycle from the browser
-3. Track list renders for each playlist
-4. Admin sees aggregate analytics and can trigger controls that hit API-04
+1. User can log in with Discord via the web app  
+2. User can list playlists and edit tracks (metadata) through the UI  
+3. Web uses API base URL from env (no bot secrets in browser)  
 
-**Plans:** TBD
+**UI hint:** yes  
 
-Plans:
-
-- [ ] 04-01: Next.js app shell + OAuth client flow
-- [ ] 04-02: Playlist pages
-- [ ] 04-03: Admin dashboard sections
-
-### Phase 5: Launch readiness
-
-**Goal:** Safe production configuration and operator documentation.
-**Depends on:** Phase 4
-**Requirements:** OPS-01, OPS-02, SEC-01
-**UI hint**: no
-**Success Criteria** (what must be TRUE):
-
-1. README allows a new dev to run the full stack locally
-2. README describes VPS + Vercel env separation clearly
-3. CORS/cookies/session settings documented and verified for production URLs
-
-**Plans:** TBD
+**Plans:** 2 plans  
 
 Plans:
 
-- [ ] 05-01: Hardening checklist + SEC-01 verification
-- [ ] 05-02: README and ops runbook polish
+- [ ] 04-01: Next.js app shell, auth callback flow, protected layout  
+- [ ] 04-02: Playlist pages + forms calling API  
+
+### Phase 5: Admin & analytics UI
+
+**Goal:** Admin-only surfaces for metrics, users, playback control, and global playlist moderation.  
+**Depends on:** Phase 3, Phase 4  
+**Requirements:** API-04, WEB-03, ADM-01, ADM-02, ADM-03  
+**Success criteria:**
+
+1. Non-admin cannot access admin routes (API + web)  
+2. Admin dashboard shows user count, playlist count, aggregate play counts  
+3. Admin can stop/clear/volume via agreed mechanism (e.g. API command queue consumed by bot)  
+4. Admin can list users/activity and edit/delete any playlist  
+
+**UI hint:** yes  
+
+**Plans:** 2 plans  
+
+Plans:
+
+- [ ] 05-01: Admin API routes + bot control channel (polling/Redis/WebSocket as chosen in plan)  
+- [ ] 05-02: Admin Next.js pages for analytics and moderation  
 
 ## Progress
 
-**Execution Order:** Phases 1 → 2 → 3 → 4 → 5
+**Execution order:** 1 → 2 → 3 → 4 → 5  
 
-| Phase | Plans Complete | Status | Completed |
+| Phase | Plans complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 3/3 | Plans done — verify & transition | - |
-| 2. API & auth | 0/3 | Not started | - |
-| 3. Discord bot | 0/4 | Not started | - |
-| 4. Web dashboard | 0/3 | Not started | - |
-| 5. Launch readiness | 0/2 | Not started | - |
+| 1. Foundation | 0/2 | Not started | - |
+| 2. API core | 0/3 | Not started | - |
+| 3. Bot & Lavalink | 0/3 | Not started | - |
+| 4. Web dashboard | 0/2 | Not started | - |
+| 5. Admin & analytics | 0/2 | Not started | - |

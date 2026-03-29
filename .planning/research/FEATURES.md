@@ -1,40 +1,19 @@
-# Features Research
+# Features Research — Music Bot + Admin Dashboard
 
-**Domain:** Discord music bots + creator dashboards
-**Researched:** 2026-03-30
-**Confidence:** HIGH
+## Table stakes (v1)
 
-## Table stakes (users expect)
+- Slash (or prefix) commands: play by query/URL, queue display, skip, pause, resume, stop
+- Voice channel join/leave tied to guild/user expectations
+- Persistent playlists per Discord user (metadata only)
+- Web OAuth login; CRUD playlists in dashboard
+- Basic analytics: play events (track title, user, timestamp)
+- Admin gate: analytics totals, user list, forced playlist edits, playback control signals (API → bot integration in later phase)
 
-- Play by query or URL; visible queue; skip / pause / stop
-- Stable voice connection and reconnection basics
-- Per-guild (server) queue isolation
-- Playlist persistence tied to user identity (here: Discord user id)
+## Differentiators (defer unless in `init.md`)
 
-## Differentiators (from `init.md`)
+- Multi-node Lavalink, Redis queues, AI recommendations (`services/ai` placeholder)
 
-- **Unified web dashboard** with Discord OAuth for the same playlists
-- **Admin panel**: analytics (users, playlists, play counts), remote playback control, user visibility, global playlist moderation
-- **Rich Discord UI**: buttons + dropdown for playlist selection
-- **AI-ready** folder without shipping AI in v1
+## Anti-features
 
-## Anti-features / defer
-
-- Audio file hosting or CDN for music files
-- Redis caching layer (future scaling)
-- Multi-node Lavalink cluster (future)
-- Email/password auth for dashboard
-
-## Dependencies between features
-
-- Web dashboard **depends on** API + OAuth + Mongo playlist API
-- Bot **depends on** Lavalink + shared track metadata shape with API
-- Admin analytics **depends on** bot/API emitting play events
-
-## Complexity notes
-
-| Area | Complexity | Note |
-|------|------------|------|
-| Lavalink + discord.js | Medium | Connection lifecycle, voice state |
-| Discord OAuth + sessions | Medium | Redirect URLs, secure cookies |
-| Admin cross-cutting | Medium | Must enforce `ADMIN_IDS` on server only |
+- Hosting MP3s or caching full tracks to disk
+- Collapsing web + API + bot into one deployable

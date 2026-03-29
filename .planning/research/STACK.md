@@ -1,47 +1,27 @@
-# Stack Research
+# Stack Research — Discord Music Bot + Dashboard
 
-**Domain:** Discord music bot + web dashboard + Lavalink
-**Researched:** 2026-03-30
-**Confidence:** HIGH (aligned with `init.md` and common Discord bot practice)
+**Researched:** 2026-03-30  
+**Confidence:** HIGH
 
-## Recommended Stack
+## Recommended stack
 
-### Core Technologies
+| Layer | Choice | Rationale |
+|-------|--------|-----------|
+| Bot | discord.js v14, Shoukaku | De facto standard; Shoukaku supports Lavalink v4 REST/WebSocket |
+| Audio | Lavalink 4.x (Java 17+) | Required for legal streaming via sources; no local audio storage |
+| API | Express, `cors`, `cookie-session` or JWT | Simple VPS deployment; pair with Discord OAuth2 |
+| Web | Next.js (App Router), React | Matches `init.md`; Vercel-friendly |
+| DB | MongoDB + Mongoose | Matches schema examples in `init.md`; flexible for playlists + analytics |
+| Monorepo | npm workspaces | No extra tooling; `@music-bot/db` etc. |
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Node.js | 20 LTS | Bot + API runtime | discord.js and ecosystem target modern Node |
-| discord.js | v14.x | Discord gateway + interactions | De facto standard; interactions, components, voice helpers |
-| Lavalink | 4.x compatible client | Audio streaming | Offloads decoding/streaming; no local FFmpeg burden on bot process |
-| MongoDB | 7+ / Atlas | Playlists + analytics | Document model fits nested playlists and event logs |
-| Next.js | 15.x (App Router) | Dashboard on Vercel | OAuth callback pages, server components for API proxy patterns |
-| TypeScript | 5.x | Shared types across monorepo | Safer contracts between bot, API, and packages |
+## Versions (verify at install time)
 
-### Supporting Libraries
+- Node.js LTS (22.x or 20.x)
+- Java 17+ for Lavalink 4
+- `mongoose` 8.x, `discord.js` 14.x, `shoukaku` 4.x (align with Lavalink major)
 
-| Library | Purpose | When to Use |
-|---------|---------|-------------|
-| `shoukaku` or `lavalink-client` | Lavalink node connection | Bot ↔ Lavalink protocol |
-| `mongoose` or native driver | Mongo access | `packages/db` |
-| `next-auth` or custom OAuth | Discord OAuth for web | Session for dashboard |
-| `zod` | Env + API validation | Shared in `packages/config` / API |
+## What to avoid
 
-### Development Tools
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| pnpm workspaces | Monorepo linking | Matches `apps/*` + `packages/*` |
-| Java 17+ | Run Lavalink.jar | Local + VPS |
-| Docker (optional) | Lavalink/API compose | Simplifies local parity |
-
-## What NOT to Use (v1)
-
-- **yt-dlp / direct download pipelines in the bot** — conflicts with "lightweight bot" + Lavalink-first design unless explicitly needed as Lavalink source plugin
-- **Storing audio on disk or S3 for playback** — out of scope per product rules
-
-## Installation (high level)
-
-1. Java + `Lavalink.jar` + `application.yml` (password, server port)
-2. MongoDB URI
-3. Discord application: bot token, OAuth2 client id/secret, redirect URLs for Next.js
-4. Node monorepo: `pnpm install`, per-app `dev` scripts
+- **Bundling Lavalink inside Node** — separate process only  
+- **youtube-dl / arbitrary download-to-disk** — conflicts with “no audio storage” and ToS risk  
+- **Single Next.js API replacing Express** — violates three-app split in `init.md`

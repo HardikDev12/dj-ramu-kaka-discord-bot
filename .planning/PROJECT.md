@@ -2,11 +2,11 @@
 
 ## What This Is
 
-A full-stack **Discord music bot** with **playlists**, **Lavalink-backed streaming** (no stored audio), a **Next.js admin/dashboard** on Vercel, and a **Node.js API** intended for an Oracle VPS. Normal users authenticate with **Discord OAuth**; **admins** are gated by Discord user IDs in environment configuration. The repo target layout is a monorepo: `apps/bot`, `apps/api`, `apps/web`, shared `packages/*`, and `services/lavalink` (plus optional `services/ai` for future use). Brand asset: `logo-bg.png` in the project root (per `init.md`).
+A monorepo for a Discord music bot with playlists, a Next.js web dashboard (UI only), an Express API (REST, auth, data), and a separate Discord bot process for voice and Lavalink playback. Normal users sign in with Discord OAuth; admins are gated by Discord user IDs in environment configuration. The stack targets a free-tier friendly deployment (e.g. Next on Vercel, API on a VPS, bot + Lavalink on the same or another host).
 
 ## Core Value
 
-Guild members can **reliably play music from names or URLs** with a **queue**, **Lavalink streaming**, and **playlist workflows** (Discord + web), without the system storing audio files—only metadata and analytics events.
+Users can discover music, queue and control playback in Discord voice channels, and manage playlists from both Discord and the web, without storing audio files—only metadata and analytics in MongoDB, with Lavalink handling streams.
 
 ## Requirements
 
@@ -16,41 +16,39 @@ Guild members can **reliably play music from names or URLs** with a **queue**, *
 
 ### Active
 
-- [ ] Monorepo scaffold: `apps/bot`, `apps/api`, `apps/web`, `packages/db`, `packages/utils`, `packages/config`, `services/lavalink`
-- [ ] MongoDB models for playlists (user-bound, track metadata) and analytics events
-- [ ] Lavalink single-node integration (Opus streaming, no audio persistence)
-- [ ] Discord bot: play, queue, pause, skip, stop, button UI, playlist dropdown
-- [ ] Playlist CRUD: create, add current track, add by search, play playlist, multiple playlists per user
-- [ ] API on VPS: auth/session for web, playlist and analytics APIs, admin actions (stop, clear queue, volume, user visibility, playlist moderation)
-- [ ] Next.js web: Discord login, playlist management, song views, admin panel
-- [ ] Environment-driven admin allowlist (`ADMIN_IDS`)
+- [ ] Three independent runtimes: `apps/web`, `apps/api`, `apps/bot` (no merged processes)
+- [ ] MongoDB metadata for playlists and play analytics (no audio blobs)
+- [ ] Lavalink as separate Java process for streaming
+- [ ] Discord OAuth for web; admin via `ADMIN_IDS`
+- [ ] Core playback: play, queue, pause, skip, stop, button UI, playlist selector
+- [ ] Web: login, playlist management, song listing, admin panel
+- [ ] Admin: analytics, playback control hooks, user visibility, global playlist edit/delete
 
 ### Out of Scope
 
-- **Storing audio files** — violates architecture; use Lavalink-only streaming
-- **Redis, multi-node Lavalink, microservice split, load balancing** — explicit future scaling (`init.md`); not v1
-- **Non-Discord auth for end users** — OAuth is Discord-only for v1
+- **Storing audio files** — violates architecture; use Lavalink only
+- **Merging web/API/bot into one Node app** — breaks deployment and security boundaries
+- **Redis, multi-node Lavalink, load balancing** — future scaling (see `init.md`)
 
 ## Context
 
-Architecture flow: **Discord / Web → Next.js (Vercel) → API (VPS) → Bot + Lavalink → Discord voice**. Database: **MongoDB**. Bot must stay lightweight; metadata and play analytics live in Mongo. AI-ready structure is reserved under `services/ai` without committing to a provider in v1.
+- Source architecture: `init.md` (authoritative for folder layout and boundaries)
+- Logo asset: `logo-bg.png` at repo root
+- Lavalink JAR present at repo root: `Lavalink.jar` (run separately; `services/lavalink` holds `application.yml` example)
 
 ## Constraints
 
-- **Tech**: Node.js for bot and API; Next.js for web; MongoDB; Lavalink (Java); discord.js + Lavalink client stack (to be finalized in implementation)
-- **Hosting**: Web on Vercel; API + bot + Lavalink on VPS (Oracle per vision)
-- **Compliance / cost**: Free-tier friendly where possible; no audio file storage
-- **Security**: Secrets only via env; admin checks server-side using `ADMIN_IDS`
+- **Architecture**: Web must not run bot or Lavalink code; API must not replace Discord gateway; bot must not serve the Next.js UI
+- **Stack**: Node.js (workspaces), Next.js (web), Express (api), discord.js + Lavalink client (bot), MongoDB, Java for Lavalink
+- **Deployment**: Web may target Vercel; API/bot/Lavalink expect a long-running host (e.g. Oracle VPS as noted in original vision)
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Monorepo (`apps/` + `packages/` + `services/`) | Matches `init.md`; shared types and DB access | — Pending |
-| MongoDB for playlists + analytics | Specified in `init.md`; flexible document model | — Pending |
-| Lavalink for all playback | Required for scalable streaming without storing media | — Pending |
-| Discord OAuth for web; ENV-based admins | No separate signup; simple admin model for small teams | — Pending |
-| Next.js on Vercel, API on VPS | Clear split: static/edge UI vs long-lived bot/API | — Pending |
+| npm workspaces monorepo | Single repo, shared `@music-bot/*` packages | — Pending |
+| Separate `apps/web`, `apps/api`, `apps/bot` | Matches `init.md` and independent scaling | — Pending |
+| Mongoose in `@music-bot/db` | Shared schemas for API and optional bot DB access | — Pending |
 
 ## Evolution
 
@@ -72,4 +70,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after initialization*
+*Last updated: 2026-03-30 after GSD new-project initialization*

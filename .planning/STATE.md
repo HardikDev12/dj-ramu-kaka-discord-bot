@@ -1,53 +1,47 @@
 # Project State
 
-## Project Reference
+## Project reference
 
-See: .planning/PROJECT.md (updated 2026-03-30)
+See: `.planning/PROJECT.md` (updated 2026-03-30)
 
-**Core value:** Guild members can reliably play music from names or URLs with a queue, Lavalink streaming, and playlist workflows (Discord + web), without storing audio files.
-**Current focus:** Phase 1 — Foundation
+**Core value:** Queue and control music in Discord + manage playlists on the web via metadata and Lavalink only.  
+**Current focus:** Phase 1 — Foundation & shared packages  
 
-## Current Position
+## Current position
 
-**Phase:** 1 of 5 (Foundation)
-**Plan:** Not started
-**Status:** Ready to plan
-**Last activity:** 2026-03-30 — Phase 1 foundation scaffold (monorepo, db package, Lavalink docs)
+Phase: 1 of 5 (Foundation & shared packages)  
+Plan: 0 of 2 in current phase  
+Status: Ready to plan  
+Last activity: 2026-03-30 — GSD new-project + monorepo scaffold  
 
-**Progress:** [█░░░░░░░░░] ~20% (3/15 roadmap plans)
+Progress: [░░░░░░░░░░] 0%  
 
-## Performance Metrics
+## Performance metrics
 
-**Velocity:**
+**Velocity:** Not tracked yet (no plans executed).  
 
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: —
+**By phase:**
 
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
+| Phase | Plans | Total | Avg/plan |
 |-------|-------|-------|----------|
-| — | — | — | — |
+| - | - | - | - |
 
-**Recent Trend:** —
-
-## Accumulated Context
+## Accumulated context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
+Logged in `PROJECT.md` Key Decisions (monorepo, three apps, Mongoose in `@music-bot/db`).
 
-### Pending Todos
-
-None yet.
-
-### Blockers/Concerns
+### Pending todos
 
 None yet.
 
-## Session Continuity
+### Blockers/concerns
 
-**Last session:** 2026-03-30 — initialization
-**Stopped at:** Roadmap created; awaiting `/gsd-discuss-phase 1` or `/gsd-plan-phase 1`
-**Resume file:** None
+None yet.
+
+## Session continuity
+
+Last session: 2026-03-30  
+Stopped at: Roadmap and scaffold created; implementation not started  
+Resume file: None  
