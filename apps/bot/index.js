@@ -1,7 +1,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { Shoukaku, Connectors } = require('shoukaku');
 const token = process.env.DISCORD_TOKEN;
 
@@ -21,9 +21,20 @@ const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), [
   },
 ]);
 
-shoukaku.on('error', (_, error) => console.error('Shoukaku error:', error));
+let lavalinkRefusedLogged = false;
+shoukaku.on('error', (_, error) => {
+  if (error?.code === 'ECONNREFUSED' && !lavalinkRefusedLogged) {
+    lavalinkRefusedLogged = true;
+    console.warn(
+      `[Lavalink] Nothing listening on ${lavalinkHost}:${lavalinkPort}. Start the server:\n` +
+        `  cd services/lavalink && java -jar ../../Lavalink.jar`
+    );
+    return;
+  }
+  console.error('Shoukaku error:', error);
+});
 
-client.once('ready', () => {
+client.once(Events.ClientReady, () => {
   console.log(`Bot logged in as ${client.user.tag}`);
   console.log('Slash commands and playback: implement in Phase 3 (see .planning/ROADMAP.md)');
 });

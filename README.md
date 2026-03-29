@@ -7,8 +7,9 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 1. Copy `.env.example` → `.env` and fill values ([external setup](#what-you-need-externally)).
 2. Install: `npm install` (repo root).
 3. Start MongoDB locally or use Atlas. Verify: `npm run db:ping` (needs `MONGO_URI` in `.env`).
-4. Start Lavalink: from `services/lavalink`, run `java -jar ../../Lavalink.jar` (Java 17+).
-5. In separate terminals (or `npm run dev` for all Node apps):
+4. Start **Lavalink** before the bot (otherwise Shoukaku logs connection errors): from `services/lavalink`, run `java -jar ../../Lavalink.jar` (Java 17+).
+5. If **port 3000** is busy (Next.js), set `WEB_PORT` (e.g. `3100`) in `.env` and set **`WEB_ORIGIN`** to the same host/port (e.g. `http://localhost:3100`) so API CORS + OAuth redirects stay correct.
+6. In separate terminals (or `npm run dev` for all Node apps):
 
    - `npm run dev:api`
    - `npm run dev:bot`
