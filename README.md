@@ -19,7 +19,7 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 
 ### From the web (recommended)
 
-1. In `.env`, set **`NEXT_PUBLIC_DISCORD_CLIENT_ID`** to the same value as **`CLIENT_ID`** (public Application ID).
+1. Ensure **`CLIENT_ID`** is set in the repo root `.env` (used automatically for `/add-bot`; optional **`NEXT_PUBLIC_DISCORD_CLIENT_ID`** overrides it).
 2. Start the web app (`npm run dev:web` or `npm run dev`).
 3. Open **`/add-bot`** (e.g. `http://localhost:3100/add-bot` if you use `WEB_PORT=3100`) and click **Add to Discord**.
 

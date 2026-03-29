@@ -24,9 +24,8 @@ export default function AddBotPage() {
 
       {!inviteUrl ? (
         <p style={{ color: '#b45309', padding: '1rem', background: '#fffbeb', borderRadius: 8 }}>
-          Set <code>NEXT_PUBLIC_DISCORD_CLIENT_ID</code> in the repo root <code>.env</code> to the same
-          value as <code>CLIENT_ID</code> (Discord Application ID), then restart{' '}
-          <code>npm run dev:web</code>.
+          Set <code>CLIENT_ID</code> (or <code>NEXT_PUBLIC_DISCORD_CLIENT_ID</code>) in the repo root{' '}
+          <code>.env</code> to your Discord Application ID, then restart <code>npm run dev:web</code>.
         </p>
       ) : (
         <>
