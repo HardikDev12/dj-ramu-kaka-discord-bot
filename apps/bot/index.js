@@ -1,7 +1,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const { Shoukaku, Connectors } = require('shoukaku');
 const { registerSlashCommands } = require('./register-commands');
 const { handleMusicCommand } = require('./handlers/music');
@@ -83,9 +83,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (interaction.deferred && !interaction.replied) {
         await interaction.editReply(text);
       } else if (interaction.replied) {
-        await interaction.followUp({ content: text, ephemeral: true });
+        await interaction.followUp({ content: text, flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: text, ephemeral: true });
+        await interaction.reply({ content: text, flags: MessageFlags.Ephemeral });
       }
     } catch {
       /* ignore */

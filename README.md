@@ -7,7 +7,7 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 1. Copy `.env.example` → `.env` and fill values ([external setup](#what-you-need-externally)).
 2. Install: `npm install` (repo root).
 3. Start MongoDB locally or use Atlas. Verify: `npm run db:ping` (needs `MONGO_URI` in `.env`).
-4. **Lavalink JAR:** Download `Lavalink.jar` from [releases](https://github.com/lavalink-devs/Lavalink/releases/latest) into `services/lavalink/` (**Java 17+** on your PATH — not Java 8). See `services/lavalink/README.md`.
+4. **Lavalink JAR:** Download `Lavalink.jar` from [releases](https://github.com/lavalink-devs/Lavalink/releases/latest) into `services/lavalink/`. You need **Java 17+** (not Java 8). If `java -version` still shows 8, install [Temurin 17+](https://adoptium.net/) and set **`JAVA_HOME`** to that JDK, or put the new `java` first on `PATH`. `npm run dev` will refuse to start Lavalink until Java 17+ is detected.
 5. If **port 3000** is busy (Next.js), set `WEB_PORT` (e.g. `3100`) in `.env` and set **`WEB_ORIGIN`** to match.
 6. **One command** — API, bot, web, and Lavalink together:
 

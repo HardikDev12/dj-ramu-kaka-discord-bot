@@ -1,3 +1,4 @@
+const { MessageFlags } = require('discord.js');
 const { LoadType } = require('shoukaku');
 
 /** @typedef {{ encoded: string, title: string }} QueuedTrack */
@@ -36,22 +37,23 @@ function attachQueueAdvance(player, guildId, shoukaku) {
  * @param {import('discord.js').ChatInputCommandInteraction} interaction
  * @param {import('shoukaku').Shoukaku} shoukaku
  */
-async function ensureVoice(interaction) {
+async function ensureVoice(interaction, shoukaku) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'Use this in a server.', ephemeral: true });
+    await interaction.reply({ content: 'Use this in a server.', flags: MessageFlags.Ephemeral });
     return null;
   }
   const channel = interaction.member?.voice?.channel;
   if (!channel) {
-    await interaction.reply({ content: 'Join a voice channel first.', ephemeral: true });
+    await interaction.reply({ content: 'Join a voice channel first.', flags: MessageFlags.Ephemeral });
     return null;
   }
   const node = shoukaku.getIdealNode();
   if (!node) {
     await interaction.reply({
-      content: 'Lavalink is not connected. Start it: `cd services/lavalink && java -jar Lavalink.jar`',
-      ephemeral: true,
+      content:
+        'Lavalink is not connected. Use **Java 17+** on your PATH, then run `npm run dev` (or start Lavalink manually).',
+      flags: MessageFlags.Ephemeral,
     });
     return null;
   }
@@ -90,7 +92,7 @@ function firstTrackFromResolve(res) {
  * @param {import('shoukaku').Shoukaku} shoukaku
  */
 async function handlePlay(interaction, shoukaku) {
-  const voice = await ensureVoice(interaction);
+  const voice = await ensureVoice(interaction, shoukaku);
   if (!voice) return;
 
   const query = interaction.options.getString('query', true);
@@ -138,7 +140,7 @@ async function handlePlay(interaction, shoukaku) {
 async function handleStop(interaction, shoukaku) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'Use this in a server.', ephemeral: true });
+    await interaction.reply({ content: 'Use this in a server.', flags: MessageFlags.Ephemeral });
     return;
   }
   queues.delete(guildId);
@@ -148,7 +150,7 @@ async function handleStop(interaction, shoukaku) {
     await shoukaku.leaveVoiceChannel(guildId).catch(() => {});
   }
   endListenerAttached.delete(guildId);
-  await interaction.reply({ content: 'Stopped and left voice.', ephemeral: true });
+  await interaction.reply({ content: 'Stopped and left voice.', flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -159,11 +161,11 @@ async function handlePause(interaction, shoukaku) {
   const guildId = interaction.guildId;
   const player = guildId && shoukaku.players.get(guildId);
   if (!player?.track) {
-    await interaction.reply({ content: 'Nothing is playing.', ephemeral: true });
+    await interaction.reply({ content: 'Nothing is playing.', flags: MessageFlags.Ephemeral });
     return;
   }
   await player.setPaused(true);
-  await interaction.reply({ content: 'Paused.', ephemeral: true });
+  await interaction.reply({ content: 'Paused.', flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -174,11 +176,11 @@ async function handleResume(interaction, shoukaku) {
   const guildId = interaction.guildId;
   const player = guildId && shoukaku.players.get(guildId);
   if (!player) {
-    await interaction.reply({ content: 'Not in voice.', ephemeral: true });
+    await interaction.reply({ content: 'Not in voice.', flags: MessageFlags.Ephemeral });
     return;
   }
   await player.setPaused(false);
-  await interaction.reply({ content: 'Resumed.', ephemeral: true });
+  await interaction.reply({ content: 'Resumed.', flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -191,7 +193,7 @@ async function handleSkip(interaction, shoukaku) {
   const player = shoukaku.players.get(guildId);
   const q = queues.get(guildId) || [];
   if (!player && q.length === 0) {
-    await interaction.reply({ content: 'Nothing to skip.', ephemeral: true });
+    await interaction.reply({ content: 'Nothing to skip.', flags: MessageFlags.Ephemeral });
     return;
   }
   const next = q.shift();
@@ -205,7 +207,7 @@ async function handleSkip(interaction, shoukaku) {
     await player.stopTrack().catch(() => {});
     await shoukaku.leaveVoiceChannel(guildId).catch(() => {});
   }
-  await interaction.reply({ content: 'Queue empty — stopped.', ephemeral: true });
+  await interaction.reply({ content: 'Queue empty — stopped.', flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -227,11 +229,11 @@ async function handleQueue(interaction, shoukaku) {
     }
   }
   if (q.length === 0 && lines.length === 0) {
-    await interaction.reply({ content: 'Queue is empty.', ephemeral: true });
+    await interaction.reply({ content: 'Queue is empty.', flags: MessageFlags.Ephemeral });
     return;
   }
   q.forEach((t, i) => lines.push(`${i + 1}. ${t.title}`));
-  await interaction.reply({ content: lines.join('\n').slice(0, 1900), ephemeral: true });
+  await interaction.reply({ content: lines.join('\n').slice(0, 1900), flags: MessageFlags.Ephemeral });
 }
 
 /**
@@ -242,16 +244,16 @@ async function handleNowPlaying(interaction, shoukaku) {
   const guildId = interaction.guildId;
   const player = guildId && shoukaku.players.get(guildId);
   if (!player?.track) {
-    await interaction.reply({ content: 'Nothing playing.', ephemeral: true });
+    await interaction.reply({ content: 'Nothing playing.', flags: MessageFlags.Ephemeral });
     return;
   }
   try {
     const decoded = await player.node.rest.decode(player.track);
     const title = decoded?.info?.title || 'Unknown';
     const paused = player.paused ? ' (paused)' : '';
-    await interaction.reply({ content: `**Now playing:** ${title}${paused}`, ephemeral: true });
+    await interaction.reply({ content: `**Now playing:** ${title}${paused}`, flags: MessageFlags.Ephemeral });
   } catch {
-    await interaction.reply({ content: 'Something is playing (could not decode title).', ephemeral: true });
+    await interaction.reply({ content: 'Something is playing (could not decode title).', flags: MessageFlags.Ephemeral });
   }
 }
 
@@ -276,7 +278,7 @@ async function handleMusicCommand(interaction, shoukaku) {
     case 'nowplaying':
       return handleNowPlaying(interaction, shoukaku);
     default:
-      return interaction.reply({ content: 'Unknown command.', ephemeral: true });
+      return interaction.reply({ content: 'Unknown command.', flags: MessageFlags.Ephemeral });
   }
 }
 
