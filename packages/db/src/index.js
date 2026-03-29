@@ -34,12 +34,18 @@ async function connect(uri = process.env.MONGO_URI) {
   return mongoose.connect(uri);
 }
 
+async function disconnect() {
+  if (mongoose.connection.readyState === 0) return;
+  await mongoose.disconnect();
+}
+
 const Playlist = mongoose.models.Playlist || mongoose.model('Playlist', playlistSchema);
 const AnalyticsEvent =
   mongoose.models.AnalyticsEvent || mongoose.model('AnalyticsEvent', analyticsSchema);
 
 module.exports = {
   connect,
+  disconnect,
   mongoose,
   Playlist,
   AnalyticsEvent,

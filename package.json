@@ -7,13 +7,15 @@
     "packages/*"
   ],
   "scripts": {
+    "db:ping": "node scripts/db-ping.js",
     "dev": "concurrently -n api,bot,web -c blue,magenta,green \"npm run dev -w @music-bot/api\" \"npm run dev -w @music-bot/bot\" \"npm run dev -w @music-bot/web\"",
     "dev:api": "npm run dev -w @music-bot/api",
     "dev:bot": "npm run dev -w @music-bot/bot",
     "dev:web": "npm run dev -w @music-bot/web"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "dotenv": "^16.4.7"
   },
   "engines": {
     "node": ">=20"

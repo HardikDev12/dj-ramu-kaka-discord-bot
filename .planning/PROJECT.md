@@ -12,17 +12,20 @@ Users can discover music, queue and control playback in Discord voice channels, 
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Three-app monorepo layout + workspaces (`apps/web`, `apps/api`, `apps/bot`) — Phase 1
+- ✓ Shared `@music-bot/db` models (playlist + analytics metadata) + `npm run db:ping` — Phase 1
+- ✓ Lavalink `application.yml` + runbook under `services/lavalink` — Phase 1
 
 ### Active
 
-- [ ] Three independent runtimes: `apps/web`, `apps/api`, `apps/bot` (no merged processes)
-- [ ] MongoDB metadata for playlists and play analytics (no audio blobs)
-- [ ] Lavalink as separate Java process for streaming
+- [ ] Discord OAuth for web; admin via `ADMIN_IDS`
+- [ ] Core playback: play, queue, pause, skip, stop, button UI, playlist selector
 - [ ] Discord OAuth for web; admin via `ADMIN_IDS`
 - [ ] Core playback: play, queue, pause, skip, stop, button UI, playlist selector
 - [ ] Web: login, playlist management, song listing, admin panel
 - [ ] Admin: analytics, playback control hooks, user visibility, global playlist edit/delete
+
+*(Playback and Lavalink runtime remain to be wired in Phases 2–3.)*
 
 ### Out of Scope
 
@@ -70,4 +73,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after GSD new-project initialization*
+*Last updated: 2026-03-30 after Phase 1 completion*

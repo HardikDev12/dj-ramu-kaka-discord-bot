@@ -6,7 +6,7 @@ Deliver the three-app monorepo with shared MongoDB models and Lavalink configura
 
 ## Phases
 
-- [ ] **Phase 1: Foundation & shared packages** — Workspaces, `@music-bot/*`, DB schemas, Lavalink config docs  
+- [x] **Phase 1: Foundation & shared packages** — Workspaces, `@music-bot/*`, DB schemas, Lavalink config docs  
 - [ ] **Phase 2: API core** — Express app, OAuth, playlist CRUD, analytics write path, health  
 - [ ] **Phase 3: Bot & Lavalink** — discord.js + Shoukaku, slash commands, queue, buttons/playlist flows  
 - [ ] **Phase 4: Web dashboard** — Next.js auth against API, playlist UI  
@@ -31,8 +31,8 @@ Deliver the three-app monorepo with shared MongoDB models and Lavalink configura
 
 Plans:
 
-- [ ] 01-01: Workspace layout, root scripts, `.env.example`, `.gitignore`  
-- [ ] 01-02: Mongoose models + Lavalink `application.yml` + README runbook  
+- [x] 01-01: Workspace layout, root scripts, `.env.example`, `.gitignore`  
+- [x] 01-02: Mongoose models + Lavalink `application.yml` + README runbook  
 
 ### Phase 2: API core
 
@@ -126,7 +126,7 @@ Plans:
 
 | Phase | Plans complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/2 | Not started | - |
+| 1. Foundation | 2/2 | Complete | 2026-03-30 |
 | 2. API core | 0/3 | Not started | - |
 | 3. Bot & Lavalink | 0/3 | Not started | - |
 | 4. Web dashboard | 0/2 | Not started | - |

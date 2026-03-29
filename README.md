@@ -6,7 +6,7 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 
 1. Copy `.env.example` → `.env` and fill values ([external setup](#what-you-need-externally)).
 2. Install: `npm install` (repo root).
-3. Start MongoDB locally or use Atlas.
+3. Start MongoDB locally or use Atlas. Verify: `npm run db:ping` (needs `MONGO_URI` in `.env`).
 4. Start Lavalink: from `services/lavalink`, run `java -jar ../../Lavalink.jar` (Java 17+).
 5. In separate terminals (or `npm run dev` for all Node apps):
 
@@ -20,7 +20,7 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 - Roadmap: [`.planning/ROADMAP.md`](./.planning/ROADMAP.md)
 - Requirements: [`.planning/REQUIREMENTS.md`](./.planning/REQUIREMENTS.md)
 
-Next step in the GSD workflow: **`/gsd-discuss-phase 1`** or **`/gsd-plan-phase 1`**.
+Phase 1 (foundation) is complete in repo. Next: **`/gsd-plan-phase 2`** or start implementing Phase 2 (API OAuth + playlist routes).
 
 ## What you need externally
 
