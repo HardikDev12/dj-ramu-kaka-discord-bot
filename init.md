@@ -185,9 +185,12 @@ ADMIN_IDS=your_id
 ## 🚀 Local Setup
 
 ### Lavalink
+Download `Lavalink.jar` from [Lavalink releases](https://github.com/lavalink-devs/Lavalink/releases/latest) into `services/lavalink/`, then:
 ```
+cd services/lavalink
 java -jar Lavalink.jar
 ```
+Requires **Java 17+**.
 
 ### API
 ```

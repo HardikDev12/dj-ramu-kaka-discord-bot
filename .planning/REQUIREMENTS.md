@@ -9,7 +9,7 @@
 
 - [x] **INFRA-01**: Repository uses npm workspaces for `apps/*` and `packages/*` per `init.md`
 - [x] **INFRA-02**: `@music-bot/db` exposes Mongo connection and playlist + analytics models aligned with `init.md` examples
-- [x] **INFRA-03**: `services/lavalink/application.yml` documents a single node; local run path documented (root `Lavalink.jar`)
+- [x] **INFRA-03**: `services/lavalink/application.yml` documents a single node; JAR downloaded into `services/lavalink/` per README
 
 ### API (`apps/api`)
 

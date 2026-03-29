@@ -23,7 +23,7 @@ Deliver the three-app monorepo with shared MongoDB models and Lavalink configura
 
 1. `npm install` at root installs all workspaces without errors  
 2. `@music-bot/db` can connect to MongoDB using `MONGO_URI` and export models  
-3. Developer can start Lavalink using root `Lavalink.jar` and `services/lavalink/application.yml` instructions  
+3. Developer can start Lavalink using `services/lavalink/Lavalink.jar` + `application.yml` (Java 17+)  
 
 **UI hint:** no  
 

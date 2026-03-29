@@ -1,5 +1,6 @@
 node_modules/
-# Keep Lavalink JAR local — download from https://github.com/lavalink-devs/Lavalink/releases
+# Lavalink binary (~100MB) — download into services/lavalink/ (see services/lavalink/README.md)
+services/lavalink/Lavalink.jar
 Lavalink.jar
 .env
 .env.local

@@ -41,7 +41,7 @@ shoukaku.on('error', (nodeName, error) => {
       console.warn(
         `[Lavalink] Not reachable at ${lavalinkHost}:${lavalinkPort} (node "${nodeName}"). ` +
           'Further connection errors are hidden until it is up.\n' +
-          '  Start: cd services/lavalink && java -jar ../../Lavalink.jar'
+          '  Start: cd services/lavalink && java -jar Lavalink.jar'
       );
     }
     return;

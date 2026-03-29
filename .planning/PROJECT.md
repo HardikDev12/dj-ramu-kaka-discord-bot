@@ -33,7 +33,7 @@ Users can discover music, queue and control playback in Discord voice channels, 
 
 - Source architecture: `init.md` (authoritative for folder layout and boundaries)
 - Logo asset: `logo-bg.png` at repo root
-- Lavalink JAR present at repo root: `Lavalink.jar` (run separately; `services/lavalink` holds `application.yml` example)
+- Lavalink: download `Lavalink.jar` into `services/lavalink/` (not committed); `application.yml` lives there too
 
 ## Constraints
 

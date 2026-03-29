@@ -1,5 +1,5 @@
 # Official reference: https://github.com/lavalink-devs/Lavalink/blob/master/LavalinkServer/application.yml.example
-# Run: cd services/lavalink && java -jar ../../Lavalink.jar
+# Place Lavalink.jar in this folder, then: java -jar Lavalink.jar  (Java 17+)
 # Password must match LAVALINK_PASSWORD in root .env (default youshallnotpass)
 
 server:
