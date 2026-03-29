@@ -7,7 +7,7 @@ Deliver the three-app monorepo with shared MongoDB models and Lavalink configura
 ## Phases
 
 - [x] **Phase 1: Foundation & shared packages** — Workspaces, `@music-bot/*`, DB schemas, Lavalink config docs  
-- [ ] **Phase 2: API core** — Express app, OAuth, playlist CRUD, analytics write path, health  
+- [x] **Phase 2: API core** — Express app, OAuth, playlist CRUD, analytics write path, health  
 - [ ] **Phase 3: Bot & Lavalink** — discord.js + Shoukaku, slash commands, queue, buttons/playlist flows  
 - [ ] **Phase 4: Web dashboard** — Next.js auth against API, playlist UI  
 - [ ] **Phase 5: Admin & analytics UI** — Totals, user views, admin playback controls, global playlist management  
@@ -52,9 +52,9 @@ Plans:
 
 Plans:
 
-- [ ] 02-01: Express bootstrap, CORS, error middleware, health  
-- [ ] 02-02: Discord OAuth routes + session strategy  
-- [ ] 02-03: Playlist + analytics routes wired to `@music-bot/db`  
+- [x] 02-01: Express bootstrap, CORS, error middleware, health  
+- [x] 02-02: Discord OAuth routes + session strategy  
+- [x] 02-03: Playlist + analytics routes wired to `@music-bot/db`  
 
 ### Phase 3: Bot & Lavalink
 
@@ -127,7 +127,7 @@ Plans:
 | Phase | Plans complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/2 | Complete | 2026-03-30 |
-| 2. API core | 0/3 | Not started | - |
+| 2. API core | 3/3 | Complete | 2026-03-30 |
 | 3. Bot & Lavalink | 0/3 | Not started | - |
 | 4. Web dashboard | 0/2 | Not started | - |
 | 5. Admin & analytics | 0/2 | Not started | - |

@@ -5,32 +5,34 @@
 See: `.planning/PROJECT.md` (updated 2026-03-30)
 
 **Core value:** Queue and control music in Discord + manage playlists on the web via metadata and Lavalink only.  
-**Current focus:** Phase 2 — API core  
+**Current focus:** Phase 3 — Bot & Lavalink  
 
 ## Current position
 
-Phase: 2 of 5 (API core)  
+Phase: 3 of 5 (Bot & Lavalink)  
 Plan: 0 of 3 in current phase  
 Status: Ready to plan / execute  
-Last activity: 2026-03-30 — Phase 1 closed; `npm run db:ping` + `disconnect()` added  
+Last activity: 2026-03-30 — Phase 2 API: OAuth, playlists, analytics, cookie sessions  
 
-Progress: [██░░░░░░░░] ~20% (phase 1 of 5 complete)  
+Progress: [████░░░░░░] ~40% (phases 1–2 of 5)  
 
 ## Performance metrics
 
-**Velocity:** Phase 1 delivered as scaffold + verification script (no timed plans yet).  
+**Velocity:** Phase 2 delivered as single implementation pass (3 roadmap plans).  
 
 **By phase:**
 
 | Phase | Plans | Total | Avg/plan |
 |-------|-------|-------|----------|
 | 1 | 2 | 2 | — |
+| 2 | 3 | 3 | — |
 
 ## Accumulated context
 
 ### Decisions
 
-Logged in `PROJECT.md` Key Decisions (monorepo, three apps, Mongoose in `@music-bot/db`).
+- Session auth via `cookie-session`; CORS locked to `WEB_ORIGIN` for credentialed browser calls.  
+- Bot may POST analytics with `X-Internal-Key` when `BOT_INTERNAL_KEY` is set.
 
 ### Pending todos
 
@@ -43,5 +45,5 @@ None yet.
 ## Session continuity
 
 Last session: 2026-03-30  
-Stopped at: Phase 1 marked complete; start Phase 2 with `/gsd-plan-phase 2` or implement OAuth + routes  
+Stopped at: Phase 2 complete; begin Phase 3 (slash commands + Shoukaku playback)  
 Resume file: None  

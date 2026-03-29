@@ -7,17 +7,17 @@
 
 ### Monorepo & infrastructure
 
-- [ ] **INFRA-01**: Repository uses npm workspaces for `apps/*` and `packages/*` per `init.md`
-- [ ] **INFRA-02**: `@music-bot/db` exposes Mongo connection and playlist + analytics models aligned with `init.md` examples
-- [ ] **INFRA-03**: `services/lavalink/application.yml` documents a single node; local run path documented (root `Lavalink.jar`)
+- [x] **INFRA-01**: Repository uses npm workspaces for `apps/*` and `packages/*` per `init.md`
+- [x] **INFRA-02**: `@music-bot/db` exposes Mongo connection and playlist + analytics models aligned with `init.md` examples
+- [x] **INFRA-03**: `services/lavalink/application.yml` documents a single node; local run path documented (root `Lavalink.jar`)
 
 ### API (`apps/api`)
 
-- [ ] **API-01**: HTTP server exposes health check and JSON error shape suitable for the web app
-- [ ] **API-02**: User can complete Discord OAuth and obtain a session usable by the web app for authenticated requests
-- [ ] **API-03**: Authenticated user can create, list, read, update, and delete their own playlists and tracks (metadata only)
+- [x] **API-01**: HTTP server exposes health check and JSON error shape suitable for the web app
+- [x] **API-02**: User can complete Discord OAuth and obtain a session usable by the web app for authenticated requests
+- [x] **API-03**: Authenticated user can create, list, read, update, and delete their own playlists and tracks (metadata only)
 - [ ] **API-04**: Admin (per `ADMIN_IDS`) can list all users/playlists and modify or delete any playlist
-- [ ] **API-05**: Server accepts play-analytics events (or writes them when called by the bot) with track, userId, timestamp
+- [x] **API-05**: Server accepts play-analytics events (or writes them when called by the bot) with track, userId, timestamp
 
 ### Bot (`apps/bot`)
 
@@ -62,11 +62,11 @@
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
-| API-01 | Phase 2 | Pending |
-| API-02 | Phase 2 | Pending |
-| API-03 | Phase 2 | Pending |
+| API-01 | Phase 2 | Complete |
+| API-02 | Phase 2 | Complete |
+| API-03 | Phase 2 | Complete |
 | API-04 | Phase 5 | Pending |
-| API-05 | Phase 2 | Pending |
+| API-05 | Phase 2 | Complete |
 | BOT-01 | Phase 3 | Pending |
 | BOT-02 | Phase 3 | Pending |
 | BOT-03 | Phase 3 | Pending |
@@ -87,4 +87,4 @@
 
 ---
 *Requirements defined: 2026-03-30*  
-*Last updated: 2026-03-30 after roadmap creation*
+*Last updated: 2026-03-30 after Phase 2 (API core)*

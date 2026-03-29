@@ -20,7 +20,25 @@ Monorepo: **Next.js** (`apps/web`), **Express** (`apps/api`), **Discord bot** (`
 - Roadmap: [`.planning/ROADMAP.md`](./.planning/ROADMAP.md)
 - Requirements: [`.planning/REQUIREMENTS.md`](./.planning/REQUIREMENTS.md)
 
-Phase 1 (foundation) is complete in repo. Next: **`/gsd-plan-phase 2`** or start implementing Phase 2 (API OAuth + playlist routes).
+Phase 2 (API core) is implemented: OAuth session, playlist CRUD, analytics ingest. Next: **Phase 3** (bot + Lavalink commands) or **`/gsd-plan-phase 3`**.
+
+## API (`apps/api`)
+
+Base URL: `http://localhost:3001` (or `API_PORT`). Errors use `{ "error": { "code", "message" } }`.
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/health` | Liveness |
+| GET | `/auth/discord?next=/path` | Redirect to Discord OAuth (`next` must be same-origin path) |
+| GET | `/auth/discord/callback` | Discord redirect (configure in Developer Portal) |
+| GET | `/auth/me` | Current user or 401 |
+| POST | `/auth/logout` | Clears session cookie |
+| GET | `/api/playlists` | Session required; lists your playlists |
+| POST | `/api/playlists` | Body `{ "name", "tracks"? }` |
+| GET/PATCH/DELETE | `/api/playlists/:id` | Owner only |
+| POST | `/api/analytics/plays` | Body `{ "track" }` as logged-in user, or `{ "track", "userId" }` with header `X-Internal-Key: $BOT_INTERNAL_KEY` for the bot |
+
+Env: `CLIENT_ID`, `CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `WEB_ORIGIN`, `SESSION_SECRET` (required in production), `MONGO_URI`, optional `BOT_INTERNAL_KEY`.
 
 ## What you need externally
 
