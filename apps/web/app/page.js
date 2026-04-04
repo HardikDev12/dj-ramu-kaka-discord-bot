@@ -1,22 +1,16 @@
-import Link from 'next/link';
+import { LandingPage } from '@/components/landing/landing-page';
+import { getDiscordBotInviteUrl } from '@/lib/discord-bot-invite';
+
+export const metadata = {
+  title: 'DJ Ramu Kaka — Discord music bot',
+  description:
+    'Voice-first Discord music bot: YouTube playback, queues, slash commands, and web playlists synced with your account.',
+};
 
 export default function Home() {
-  const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  return (
-    <main>
-      <nav style={{ marginBottom: '1.5rem' }}>
-        <Link href="/add-bot" style={{ fontWeight: 600 }}>
-          Add bot to server (web)
-        </Link>
-      </nav>
-      <h1>Music bot dashboard</h1>
-      <p>
-        API base: <code>{api}</code>
-      </p>
-      <p>
-        Use <Link href="/add-bot">Add bot to server</Link> to invite the bot from the browser (no
-        terminal). Playlist login and OAuth still land in Phase 4.
-      </p>
-    </main>
-  );
+  const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+  const permissions = process.env.NEXT_PUBLIC_DISCORD_BOT_PERMISSIONS || '36785152';
+  const inviteUrl = getDiscordBotInviteUrl(clientId, permissions);
+
+  return <LandingPage inviteUrl={inviteUrl} />;
 }

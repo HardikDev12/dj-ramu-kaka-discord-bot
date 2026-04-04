@@ -8,6 +8,7 @@
     "register-commands": "node register-commands.js"
   },
   "dependencies": {
+    "@music-bot/db": "0.0.0",
     "dotenv": "^16.4.7",
     "discord.js": "^14.16.3",
     "shoukaku": "^4.1.0"

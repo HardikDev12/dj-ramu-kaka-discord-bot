@@ -1,6 +1,6 @@
-# Official reference: https://github.com/lavalink-devs/Lavalink/blob/master/LavalinkServer/application.yml.example
-# Place Lavalink.jar in this folder, then: java -jar Lavalink.jar  (Java 17+)
-# Password must match LAVALINK_PASSWORD in root .env (default youshallnotpass)
+# Lavalink v4 + dev.lavalink.youtube:youtube-plugin + LavaSearch (advanced search API)
+# YouTube plugin: https://github.com/lavalink-devs/youtube-source/blob/main/README.md
+# LavaSearch: https://github.com/topi314/LavaSearch (GET /v4/loadsearch; bot uses it for text search when available)
 
 server:
   port: 2333
@@ -8,9 +8,48 @@ server:
   http2:
     enabled: false
 
+# Plugin-specific config MUST live under top-level `plugins:` (not under lavalink:).
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    # Order matters: first client tried first. See "Available Clients" in youtube-source README.
+    # Put ANDROID_VR / TVHTML5_SIMPLY before WEB so playback can avoid broken WEB cipher when YouTube changes base.js.
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - TVHTML5_SIMPLY
+      - WEB
+      - WEBEMBEDDED
+      - MWEB
+
+    # If you still get "Something went wrong while looking up the track", enable ONE of:
+    #
+    # A) OAuth (no poToken needed) — use a burner Google account; follow Lavalink logs for device code.
+    # oauth:
+    #   enabled: true
+    #   refreshToken: "paste-after-first-successful-login-from-logs"
+    #
+    # B) poToken (WEB / WEBEMBEDDED only) — generate via https://github.com/iv-org/youtube-trusted-session-generator
+    # pot:
+    #   token: "your_po_token"
+    #   visitorData: "your_visitor_data"
+
 lavalink:
+  plugins:
+    # Keep in sync with Maven latest: https://maven.lavalink.dev/releases/dev/lavalink/youtube/youtube-plugin/
+    # Old versions often break with "Must find action functions from script" after YouTube updates.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.0"
+      repository: "https://maven.lavalink.dev/releases"
+    - dependency: "com.github.topi314.lavasearch:lavasearch-plugin:1.0.0"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
   server:
     password: "youshallnotpass"
+
+    # REQUIRED: built-in YouTube must stay OFF when using youtube-plugin (otherwise lookups break).
     sources:
       youtube: false
       bandcamp: true
@@ -20,6 +59,16 @@ lavalink:
       nico: true
       http: true
       local: false
+
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: HIGH
+    trackStuckThresholdMs: 10000
+
+    youtubePlaylistLoadLimit: 50
+    playerUpdateInterval: 5
+    nonAllocatingFrameBuffer: true
 
 metrics:
   prometheus:

@@ -10,6 +10,8 @@ const { notFoundHandler, errorHandler } = require('./middleware/error');
 const authRoutes = require('./routes/auth');
 const playlistsRoutes = require('./routes/playlists');
 const analyticsRoutes = require('./routes/analytics');
+const userRoutes = require('./routes/user');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -44,9 +46,16 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'music-bot-api' });
 });
 
+/** Avoid 404 confusion: API has no web UI; send people to Next (WEB_ORIGIN). */
+app.get('/', (_req, res) => {
+  res.redirect(302, webOrigin);
+});
+
 app.use('/auth', authRoutes);
 app.use('/api/playlists', playlistsRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "db:ping": "node scripts/db-ping.js",
+    "seed:super-admin": "node scripts/seed-super-admin.js",
     "discord:invite-url": "node scripts/discord-invite-url.js",
     "register-commands": "npm run register-commands -w @music-bot/bot",
     "dev": "concurrently -n api,bot,web,lava -c blue,magenta,green,yellow \"npm run dev -w @music-bot/api\" \"npm run dev -w @music-bot/bot\" \"npm run dev -w @music-bot/web\" \"node scripts/run-lavalink.js\"",
