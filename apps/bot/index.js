@@ -4,13 +4,32 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const { Shoukaku, Connectors } = require('shoukaku');
+
+/** Shoukaku's stock connector uses `shards.get(shardId)` only; a key mismatch drops OP 4 silently and voice never completes. */
+class DiscordJSAudioConnector extends Connectors.DiscordJS {
+  sendPacket(shardId, payload, important) {
+    const shards = this.client.ws.shards;
+    let shard = shards.get(shardId);
+    if (!shard && shards.size > 0) shard = shards.first();
+    return shard?.send(payload, important);
+  }
+}
 const { registerSlashCommands } = require('./register-commands');
-const { handleMusicCommand, handleMusicButton, handleMusicStringSelect } = require('./handlers/music');
+const {
+  handleMusicCommand,
+  handleMusicButton,
+  handleMusicStringSelect,
+  onBotDisconnectedFromVoice,
+} = require('./handlers/music');
 const {
   handlePlaylistCommand,
   handlePlaylistAutocomplete,
   handlePlaylistStringSelect,
 } = require('./handlers/playlists');
+const {
+  guildInteractionCooldownTier,
+  tryConsumeGuildCooldown,
+} = require('./lib/guild-cooldown');
 
 const token = process.env.DISCORD_TOKEN;
 
@@ -60,9 +79,10 @@ function waitForLavalinkHttp(hostname, port, maxWaitMs = 120000) {
 }
 
 // Empty nodes: connector still sets bot user id on clientReady; we addNode() after HTTP is live (see ClientReady).
-const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), [], {
+const shoukaku = new Shoukaku(new DiscordJSAudioConnector(client), [], {
   reconnectTries: 30,
   reconnectInterval: 3,
+  voiceConnectionTimeout: 30,
 });
 
 function isLavalinkUnreachable(error) {
@@ -131,23 +151,65 @@ client.once(Events.ClientReady, async (c) => {
   });
 });
 
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+  if (newState.id !== client.user?.id) return;
+  if (oldState.channelId && !newState.channelId) {
+    onBotDisconnectedFromVoice(newState.guild.id, client, shoukaku);
+  }
+});
+
+/**
+ * Per-guild spam guard (see lib/guild-cooldown.js). Does not apply to autocomplete.
+ */
+async function replyGuildCooldown(interaction, retryAfterSec) {
+  const msg = `This server is using music commands too quickly. Try again in **${retryAfterSec}**s.`;
+  const flags = MessageFlags.Ephemeral;
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp({ content: msg, flags });
+      return;
+    }
+    await interaction.reply({ content: msg, flags });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function routeMusicInteraction(interaction) {
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'playlist') {
+      return handlePlaylistCommand(interaction, shoukaku, client);
+    }
+    return handleMusicCommand(interaction, shoukaku, client);
+  }
+  if (interaction.isButton() && interaction.customId.startsWith('djrk:')) {
+    return handleMusicButton(interaction, shoukaku, client);
+  }
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('djrkpick:')) {
+    return handleMusicStringSelect(interaction, shoukaku, client);
+  }
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('djrkplpick:')) {
+    return handlePlaylistStringSelect(interaction, shoukaku, client);
+  }
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === 'playlist') {
-        await handlePlaylistCommand(interaction, shoukaku, client);
-      } else {
-        await handleMusicCommand(interaction, shoukaku, client);
-      }
-    } else if (interaction.isAutocomplete() && interaction.commandName === 'playlist') {
+    if (interaction.isAutocomplete() && interaction.commandName === 'playlist') {
       await handlePlaylistAutocomplete(interaction);
-    } else if (interaction.isButton() && interaction.customId.startsWith('djrk:')) {
-      await handleMusicButton(interaction, shoukaku, client);
-    } else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('djrkpick:')) {
-      await handleMusicStringSelect(interaction, shoukaku, client);
-    } else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('djrkplpick:')) {
-      await handlePlaylistStringSelect(interaction, shoukaku, client);
+      return;
     }
+
+    const cdTier = guildInteractionCooldownTier(interaction);
+    if (cdTier && interaction.guildId) {
+      const cd = tryConsumeGuildCooldown(interaction.guildId, cdTier);
+      if (!cd.ok) {
+        await replyGuildCooldown(interaction, cd.retryAfterSec);
+        return;
+      }
+    }
+
+    await routeMusicInteraction(interaction);
   } catch (err) {
     console.error('[interaction]', err);
     const text = 'Something went wrong.';

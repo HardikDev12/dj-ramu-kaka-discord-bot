@@ -234,6 +234,7 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
       await playPlaylistInGuild({
         guildId: voice.guildId,
         channelId: voice.channelId,
+        shardId: voice.shardId,
         interaction,
         client: interaction.client,
         shoukaku,
