@@ -51,6 +51,71 @@ const MAX_PICK_OPTIONS = 25;
  */
 const VOICE_JOIN_SELF_DEAF = process.env.BOT_VOICE_SELF_DEAF !== "0";
 
+/**
+ * Leave voice after this many ms with no active playback (paused counts as inactive; empty queue + no track too).
+ * Set `BOT_VOICE_IDLE_MS=0` in `.env` to disable.
+ */
+const VOICE_IDLE_LEAVE_MS = (() => {
+  const raw = process.env.BOT_VOICE_IDLE_MS;
+  if (raw === "0" || raw === "") return 0;
+  const n = Number.parseInt(raw ?? "120000", 10);
+  if (!Number.isFinite(n) || n < 0) return 120_000;
+  return n;
+})();
+
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const voiceIdleTimers = new Map();
+
+function clearVoiceIdleTimer(guildId) {
+  const t = voiceIdleTimers.get(guildId);
+  if (t) clearTimeout(t);
+  voiceIdleTimers.delete(guildId);
+}
+
+/**
+ * True when the bot is in voice but has nothing “live”: no track, or track paused, and nothing queued.
+ * @param {string} guildId
+ * @param {import('shoukaku').Shoukaku} shoukaku
+ */
+function isVoiceSessionIdle(guildId, shoukaku) {
+  const player = shoukaku.players.get(guildId);
+  if (!player) return false;
+  const q = queues.get(guildId) || [];
+  if (q.length > 0) return false;
+  if (!player.track) return true;
+  return Boolean(player.paused);
+}
+
+/**
+ * Start or clear the auto-disconnect timer from the current player/queue state.
+ * @param {string} guildId
+ * @param {import('shoukaku').Shoukaku} shoukaku
+ * @param {import('discord.js').Client} client
+ */
+function refreshVoiceIdleState(guildId, shoukaku, client) {
+  clearVoiceIdleTimer(guildId);
+  if (VOICE_IDLE_LEAVE_MS <= 0) return;
+  if (!isVoiceSessionIdle(guildId, shoukaku)) return;
+
+  const timer = setTimeout(() => {
+    voiceIdleTimers.delete(guildId);
+    void runGuildQueueWork(guildId, async () => {
+      if (!isVoiceSessionIdle(guildId, shoukaku)) return;
+      const player = shoukaku.players.get(guildId);
+      if (!player) return;
+      queues.delete(guildId);
+      await finalizeGuildIdle(
+        guildId,
+        shoukaku,
+        client,
+        player,
+        "⏹ Left voice after being inactive.",
+      );
+    });
+  }, VOICE_IDLE_LEAVE_MS);
+  voiceIdleTimers.set(guildId, timer);
+}
+
 /** Pending search picks: nonce → who searched + track list (option values are indices only). */
 /** @type {Map<string, { userId: string; guildId: string; tracks: QueuedTrack[]; created: number }>} */
 const pickSessions = new Map();
@@ -366,8 +431,10 @@ async function formatQueueListContent(guildId, shoukaku) {
 
 /**
  * Stop playback, leave voice, clear panel — queue is already empty or caller cleared it.
+ * @param {string} [panelMessage]
  */
-async function finalizeGuildIdle(guildId, shoukaku, client, player) {
+async function finalizeGuildIdle(guildId, shoukaku, client, player, panelMessage) {
+  clearVoiceIdleTimer(guildId);
   try {
     await player.stopTrack();
   } catch {
@@ -382,7 +449,7 @@ async function finalizeGuildIdle(guildId, shoukaku, client, player) {
     await clearPlayerPanel(
       guildId,
       client,
-      "⏹ Queue finished — left voice.",
+      panelMessage ?? "⏹ Queue finished — left voice.",
     );
   } catch {
     /* ignore */
@@ -408,6 +475,7 @@ async function advanceQueuePlayHead(guildId, shoukaku, client, player) {
       if (q.length) queues.set(guildId, q);
       else queues.delete(guildId);
       await refreshPlayerPanel(guildId, client, shoukaku);
+      refreshVoiceIdleState(guildId, shoukaku, client);
       return true;
     } catch (e) {
       console.error("[queue advance]", e);
@@ -472,6 +540,7 @@ function attachQueueAdvance(player, guildId, shoukaku, client) {
  * @param {import('shoukaku').Shoukaku} shoukaku
  */
 function onBotDisconnectedFromVoice(guildId, client, shoukaku) {
+  clearVoiceIdleTimer(guildId);
   queues.delete(guildId);
   for (const [nonce, row] of pickSessions.entries()) {
     if (row.guildId === guildId) pickSessions.delete(nonce);
@@ -612,6 +681,7 @@ async function playPlaylistInGuild(args) {
     await interaction.editReply(
       "Could not load any tracks from that playlist (every URL failed Lavalink resolve). Check links or try `/play` on one URL.",
     );
+    refreshVoiceIdleState(guildId, shoukaku, client);
     return;
   }
   const q = queues.get(guildId) || [];
@@ -624,6 +694,7 @@ async function playPlaylistInGuild(args) {
       `Queued **${ready.length}** track(s) from your playlist.${note}`,
     );
     await refreshPlayerPanel(guildId, client, shoukaku);
+    refreshVoiceIdleState(guildId, shoukaku, client);
     return;
   }
   const [first, ...restQueued] = ready;
@@ -635,6 +706,7 @@ async function playPlaylistInGuild(args) {
     console.error("[playPlaylistInGuild]", err);
     queues.delete(guildId);
     await interaction.editReply(formatPlaybackFailure(err));
+    refreshVoiceIdleState(guildId, shoukaku, client);
     return;
   }
   const payload = await buildPanelPayload(guildId, shoukaku);
@@ -644,6 +716,7 @@ async function playPlaylistInGuild(args) {
     channelId: reply.channelId,
     messageId: reply.id,
   });
+  refreshVoiceIdleState(guildId, shoukaku, client);
   if (skipped) {
     await interaction.followUp({
       content: `${skipped} playlist URL(s) could not be resolved and were skipped.`,
@@ -749,6 +822,7 @@ async function finalizeTrackChoice(
       })
       .catch(() => {});
     await refreshPlayerPanel(guildId, client, shoukaku);
+    refreshVoiceIdleState(guildId, shoukaku, client);
     return;
   }
   try {
@@ -761,11 +835,13 @@ async function finalizeTrackChoice(
       channelId: interaction.message.channelId,
       messageId: interaction.message.id,
     });
+    refreshVoiceIdleState(guildId, shoukaku, client);
   } catch (err) {
     console.error("[finalizeTrackChoice]", err);
     await interaction.message
       .edit({ content: formatPlaybackFailure(err), embeds: [], components: [] })
       .catch(() => {});
+    refreshVoiceIdleState(guildId, shoukaku, client);
   }
 }
 
@@ -932,6 +1008,7 @@ async function handlePlay(interaction, shoukaku, client) {
       await interaction.editReply(
         "No results for that search. Try a **direct URL**, a more specific query, or a prefix like `ytsearch:` / `scsearch:` depending on your Lavalink sources.",
       );
+      refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
     }
 
@@ -939,10 +1016,12 @@ async function handlePlay(interaction, shoukaku, client) {
       const tracks = tracksFromSearchResults(res);
       if (!tracks?.length) {
         await interaction.editReply("No results for that search.");
+        refreshVoiceIdleState(voice.guildId, shoukaku, client);
         return;
       }
       const slice = tracks.slice(0, MAX_PICK_OPTIONS);
       await replyWithTrackPicker(interaction, voice, query, slice);
+      refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
     }
 
@@ -951,6 +1030,7 @@ async function handlePlay(interaction, shoukaku, client) {
       await interaction.editReply(
         "No results for that search. Try a **direct URL**, a more specific query, or a prefix like `ytsearch:` / `scsearch:` depending on your Lavalink sources.",
       );
+      refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
     }
 
@@ -963,6 +1043,7 @@ async function handlePlay(interaction, shoukaku, client) {
         `Added to queue: **${track.title}** (position ${q.length})`,
       );
       await refreshPlayerPanel(voice.guildId, client, shoukaku);
+      refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
     }
 
@@ -975,9 +1056,11 @@ async function handlePlay(interaction, shoukaku, client) {
       channelId: reply.channelId,
       messageId: reply.id,
     });
+    refreshVoiceIdleState(voice.guildId, shoukaku, client);
   } catch (err) {
     console.error("[play]", err);
     await interaction.editReply(formatPlaybackFailure(err));
+    refreshVoiceIdleState(voice.guildId, shoukaku, client);
   }
 }
 
@@ -995,6 +1078,7 @@ async function handleStop(interaction, shoukaku, client) {
     });
     return;
   }
+  clearVoiceIdleTimer(guildId);
   queues.delete(guildId);
   const player = shoukaku.players.get(guildId);
   if (player) {
@@ -1034,6 +1118,7 @@ async function handlePause(interaction, shoukaku, client) {
     return;
   }
   await refreshPlayerPanel(guildId, client, shoukaku);
+  refreshVoiceIdleState(guildId, shoukaku, client);
   await interaction.reply({
     content: "Paused.",
     flags: MessageFlags.Ephemeral,
@@ -1066,6 +1151,7 @@ async function handleResume(interaction, shoukaku, client) {
     return;
   }
   await refreshPlayerPanel(guildId, client, shoukaku);
+  refreshVoiceIdleState(guildId, shoukaku, client);
   await interaction.reply({
     content: "Resumed.",
     flags: MessageFlags.Ephemeral,
@@ -1105,6 +1191,7 @@ async function handleSkip(interaction, shoukaku, client) {
     await player.stopTrack();
     await drainGuildQueueWork(guildId);
     await refreshPlayerPanel(guildId, client, shoukaku);
+    refreshVoiceIdleState(guildId, shoukaku, client);
   } catch (err) {
     console.error("[skip]", err);
     await interaction.reply({
@@ -1175,6 +1262,7 @@ async function handleNowPlaying(interaction, shoukaku) {
  * @param {string} guildId
  * @param {import('shoukaku').Player | undefined} player
  * @param {import('shoukaku').Shoukaku} shoukaku
+ * @param {import('discord.js').Client} client
  * @param {boolean} pause
  */
 async function musicButtonSetPaused(
@@ -1182,6 +1270,7 @@ async function musicButtonSetPaused(
   guildId,
   player,
   shoukaku,
+  client,
   pause,
 ) {
   const emptyMsg = pause ? "Nothing is playing." : "Nothing to resume.";
@@ -1201,6 +1290,7 @@ async function musicButtonSetPaused(
   }
   const payload = await buildPanelPayload(guildId, shoukaku);
   await interaction.update(payload);
+  refreshVoiceIdleState(guildId, shoukaku, client);
 }
 
 /**
@@ -1208,8 +1298,9 @@ async function musicButtonSetPaused(
  * @param {string} guildId
  * @param {import('shoukaku').Player | undefined} player
  * @param {import('shoukaku').Shoukaku} shoukaku
+ * @param {import('discord.js').Client} client
  */
-async function musicButtonSkip(interaction, guildId, player, shoukaku) {
+async function musicButtonSkip(interaction, guildId, player, shoukaku, client) {
   const q = queues.get(guildId) || [];
   if (!player && q.length === 0) {
     await interaction.reply({
@@ -1238,6 +1329,7 @@ async function musicButtonSkip(interaction, guildId, player, shoukaku) {
   }
   const payload = await buildPanelPayload(guildId, shoukaku);
   await interaction.update(payload);
+  refreshVoiceIdleState(guildId, shoukaku, client);
 }
 
 /**
@@ -1247,6 +1339,7 @@ async function musicButtonSkip(interaction, guildId, player, shoukaku) {
  * @param {import('shoukaku').Shoukaku} shoukaku
  */
 async function musicButtonStop(interaction, guildId, player, shoukaku) {
+  clearVoiceIdleTimer(guildId);
   if (!player) {
     await interaction.reply({
       content: "Not in voice.",
@@ -1270,7 +1363,7 @@ async function musicButtonStop(interaction, guildId, player, shoukaku) {
  * @param {import('shoukaku').Shoukaku} shoukaku
  * @param {import('discord.js').Client} client
  */
-async function handleMusicButton(interaction, shoukaku, _client) {
+async function handleMusicButton(interaction, shoukaku, client) {
   const parsed = parseButtonId(interaction.customId);
   if (!parsed?.guildId || parsed.guildId !== interaction.guildId) {
     await interaction.reply({
@@ -1310,15 +1403,15 @@ async function handleMusicButton(interaction, shoukaku, _client) {
   const player = shoukaku.players.get(guildId);
 
   if (action === "pause") {
-    await musicButtonSetPaused(interaction, guildId, player, shoukaku, true);
+    await musicButtonSetPaused(interaction, guildId, player, shoukaku, client, true);
     return;
   }
   if (action === "resume") {
-    await musicButtonSetPaused(interaction, guildId, player, shoukaku, false);
+    await musicButtonSetPaused(interaction, guildId, player, shoukaku, client, false);
     return;
   }
   if (action === "skip") {
-    await musicButtonSkip(interaction, guildId, player, shoukaku);
+    await musicButtonSkip(interaction, guildId, player, shoukaku, client);
     return;
   }
   if (action === "stop") {
@@ -1359,6 +1452,10 @@ async function handleHelp(interaction) {
     "Use **Pause** vs **Resume** for temporary silence; use **Stop** to fully disconnect. " +
     "**Queue** can be used without being in voice; other buttons need you in the **same voice channel** as the bot.";
 
+  const idle =
+    "If playback is **paused**, you’re on a **search picker** with no song yet, or the bot joined but **nothing started**, it **leaves voice automatically** after **2 minutes** of that idle state (configurable with `BOT_VOICE_IDLE_MS` in `.env`; set to `0` to turn off). " +
+    "When the **queue runs out**, the bot leaves **right away**.";
+
   const playlists =
     "`/playlist create` `name` — New empty list.\n" +
     "`/playlist list` — Your playlists and track counts.\n" +
@@ -1380,6 +1477,7 @@ async function handleHelp(interaction) {
       { name: "Search & URLs", value: search, inline: false },
       { name: "Playlists", value: playlists, inline: false },
       { name: "Player buttons (in chat)", value: buttons, inline: false },
+      { name: "Auto-disconnect", value: idle, inline: false },
     )
     .setTimestamp();
 
