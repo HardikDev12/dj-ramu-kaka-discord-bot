@@ -86,12 +86,21 @@ async function safeDeferUpdate(interaction, timing) {
       typeof interaction.createdTimestamp === 'number'
         ? Date.now() - interaction.createdTimestamp
         : -1;
-    let ageHint = code === 10062 ? ` interactionAge=${ageMs}ms` : '';
+    const idHint = interaction?.id ? ` id=${interaction.id}` : '';
+    let ageHint = code === 10062 ? ` interactionAge=${ageMs}ms${idHint}` : '';
     if (code === 10062 && timing?.likelyClockSkew) {
       ageHint += ` | If gateway was fresh, ${TIME_SYNC_INLINE}`;
+    } else if (code === 10062 && ageMs >= 0 && ageMs < 4000) {
+      ageHint +=
+        ' | If age is low but this persists, stop duplicate bot processes (same DISCORD_TOKEN) or fix OS clock vs NTP.';
     }
     if (code !== 40060 && code !== 10062) {
       console.error('[safeDeferUpdate]', label, err);
+    } else if (code === 40060) {
+      console.warn(
+        '[safeDeferUpdate]',
+        `Already acknowledged — duplicate INTERACTION_CREATE or token already used; this copy skipped.${idHint}`,
+      );
     } else {
       console.warn('[safeDeferUpdate]', label, err?.message || err, ageHint);
     }
@@ -130,12 +139,25 @@ async function safeDeferReply(interaction, options, timing) {
       typeof interaction.createdTimestamp === 'number'
         ? Date.now() - interaction.createdTimestamp
         : -1;
-    let ageHint = code === 10062 ? ` interactionAge=${ageMs}ms` : '';
+    const idHint = interaction?.id ? ` id=${interaction.id}` : '';
+    const cmdHint =
+      typeof interaction.isChatInputCommand === 'function' && interaction.isChatInputCommand()
+        ? ` cmd=/${interaction.commandName}`
+        : '';
+    let ageHint = code === 10062 ? ` interactionAge=${ageMs}ms${idHint}${cmdHint}` : '';
     if (code === 10062 && timing?.likelyClockSkew) {
       ageHint += ` | ${TIME_SYNC_INLINE}`;
+    } else if (code === 10062 && ageMs >= 0 && ageMs < 4000) {
+      ageHint +=
+        ' | Often: a second bot instance (same token) acked first, or system clock skew vs UTC.';
     }
     if (code !== 40060 && code !== 10062) {
       console.error('[safeDeferReply]', label, err);
+    } else if (code === 40060) {
+      console.warn(
+        '[safeDeferReply]',
+        `Already acknowledged — duplicate INTERACTION_CREATE or token already used; this copy skipped.${idHint}${cmdHint}`,
+      );
     } else {
       console.warn('[safeDeferReply]', label, err?.message || err, ageHint);
     }

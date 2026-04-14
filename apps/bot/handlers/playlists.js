@@ -102,8 +102,8 @@ async function handlePlaylistStringSelect(interaction, shoukaku) {
   const nonce = interaction.customId.slice(prefix.length);
   const session = takePlaylistPickSession(nonce);
   if (!session) {
-    await interaction.message
-      .edit({
+    await interaction
+      .editReply({
         content: '❌ Selection expired. Run `/playlist add` again.',
         embeds: [],
         components: [],
@@ -124,8 +124,8 @@ async function handlePlaylistStringSelect(interaction, shoukaku) {
   const track = session.tracks[idx];
   if (!track || Number.isNaN(idx)) {
     playlistPickSessions.delete(nonce);
-    await interaction.message
-      .edit({ content: 'Invalid choice.', embeds: [], components: [] })
+    await interaction
+      .editReply({ content: 'Invalid choice.', embeds: [], components: [] })
       .catch(() => {});
     return;
   }
@@ -140,14 +140,16 @@ async function handlePlaylistStringSelect(interaction, shoukaku) {
   try {
     const playlist = await Playlist.findById(session.playlistId);
     if (!playlist || playlist.userId !== interaction.user.id) {
-      await interaction.message.edit({ content: 'Playlist not found.', embeds: [], components: [] }).catch(() => {});
+      await interaction
+        .editReply({ content: 'Playlist not found.', embeds: [], components: [] })
+        .catch(() => {});
       return;
     }
     const entry = await queuedTrackToPlaylistEntry(node.rest, track);
     playlist.tracks.push(entry);
     await playlist.save();
-    await interaction.message
-      .edit({
+    await interaction
+      .editReply({
         content: `Added **${entry.title}** to **${playlist.name}** — **${playlist.tracks.length}** tracks total.`,
         embeds: [],
         components: [],
@@ -155,8 +157,8 @@ async function handlePlaylistStringSelect(interaction, shoukaku) {
       .catch(() => {});
   } catch (err) {
     console.error('[playlist pick]', err);
-    await interaction.message
-      .edit({ content: formatPlaybackFailure(err), embeds: [], components: [] })
+    await interaction
+      .editReply({ content: formatPlaybackFailure(err), embeds: [], components: [] })
       .catch(() => {});
   }
 }

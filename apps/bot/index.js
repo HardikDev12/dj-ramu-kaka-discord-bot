@@ -210,7 +210,11 @@ if (process.env.SHOUKAKU_DEBUG === '1') {
 }
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`Bot logged in as ${c.user.tag}`);
+  const appId = c.application?.id ?? c.user?.id;
+  console.log(
+    `[bot] Logged in as ${c.user.tag}${appId ? ` — application id ${appId}` : ''}. ` +
+      'If interactions fail with 10062 while age is low, stop any other process using the same DISCORD_TOKEN and confirm this id matches your app in the Developer Portal.',
+  );
   await warnIfSystemClockDriftFromDiscord();
   if (process.env.BOT_REGISTER_ON_READY === '1') {
     try {
@@ -267,6 +271,41 @@ function noteRawInteractionCreate(id) {
   rawInteractionReceivedAt.set(id, Date.now());
 }
 
+/**
+ * discord.js can deliver the same INTERACTION_CREATE twice in rare cases; a second pass
+ * would call deferReply/deferUpdate again → 40060 / 10062. One in-flight handler per id.
+ * @type {Map<string, true>}
+ */
+const interactionCreateInflight = new Map();
+
+/** Same id seen again shortly after a handler finished (gateway replay); skip entire handler. */
+const INTERACTION_RECENT_TTL_MS = 15_000;
+/** @type {Map<string, number>} id → epoch ms until which we ignore repeats */
+const interactionRecentlyHandledUntil = new Map();
+
+function pruneStaleInteractionRecent() {
+  const now = Date.now();
+  for (const [k, until] of interactionRecentlyHandledUntil) {
+    if (until < now) interactionRecentlyHandledUntil.delete(k);
+  }
+  if (interactionRecentlyHandledUntil.size <= 200) return;
+  const sorted = [...interactionRecentlyHandledUntil.entries()].sort((a, b) => a[1] - b[1]);
+  const excess = interactionRecentlyHandledUntil.size - 200;
+  for (let i = 0; i < excess; i += 1) {
+    interactionRecentlyHandledUntil.delete(sorted[i][0]);
+  }
+}
+
+function isInteractionRecentlyHandled(id) {
+  const until = interactionRecentlyHandledUntil.get(id);
+  if (until == null) return false;
+  if (Date.now() > until) {
+    interactionRecentlyHandledUntil.delete(id);
+    return false;
+  }
+  return true;
+}
+
 async function routeMusicInteraction(interaction) {
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'playlist') {
@@ -296,6 +335,21 @@ client.on(Events.Raw, (packet) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  const intrId = interaction.id;
+  if (interactionCreateInflight.has(intrId)) {
+    console.warn(
+      `[interaction] Duplicate INTERACTION_CREATE ignored (id=${intrId}). ` +
+        'Rare discord.js double-dispatch; if this spams, check only one bot process uses this token.',
+    );
+    return;
+  }
+  if (isInteractionRecentlyHandled(intrId)) {
+    console.warn(
+      `[interaction] Ignoring repeat INTERACTION_CREATE id=${intrId} (same event replayed within ${INTERACTION_RECENT_TTL_MS / 1000}s).`,
+    );
+    return;
+  }
+  interactionCreateInflight.set(intrId, true);
   try {
     // Discord invalidates the interaction token if the first response is not sent within ~3s
     // (see https://docs.discord.com/developers/interactions/receiving-and-responding ). Defer ASAP.
@@ -317,18 +371,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       msSinceGatewayPacket < 200 &&
       snowflakeAgeMs > 2000;
 
-    if (likelyClockSkew) {
-      console.warn(
-        `[interaction] Snowflake age ${snowflakeAgeMs}ms but gateway packet was ${msSinceGatewayPacket}ms ago — ` +
-          '**local clock is skewed vs UTC** (snowflake age is inflated). Fix:\n' +
-          TIME_SYNC_MULTILINE,
-      );
-    } else if (snowflakeAgeMs > 2500 && (msSinceGatewayPacket == null || msSinceGatewayPacket >= 200)) {
-      console.warn(
-        `[interaction] Late delivery: snowflakeAge=${snowflakeAgeMs}ms msSinceGatewayPacket=${msSinceGatewayPacket ?? 'n/a'} — ack may fail with 10062 (CPU, network, VPN, duplicate bot process).`,
-      );
-    }
-
+    // ACK before any console.warn (sync I/O can stall the event loop and burn the ~3s window on Windows).
     // ACK before cooldown so rate-limit sync work never burns the 3s window (10062).
     let ackOk = true;
     if (interaction.isChatInputCommand()) {
@@ -352,6 +395,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       ) {
         ackOk = await safeDeferUpdate(interaction, { likelyClockSkew });
       }
+    }
+
+    if (likelyClockSkew) {
+      console.warn(
+        `[interaction] Snowflake age ${snowflakeAgeMs}ms but gateway packet was ${msSinceGatewayPacket}ms ago — ` +
+          '**local clock is skewed vs UTC** (snowflake age is inflated). Fix:\n' +
+          TIME_SYNC_MULTILINE,
+      );
+    } else if (snowflakeAgeMs > 2500 && (msSinceGatewayPacket == null || msSinceGatewayPacket >= 200)) {
+      console.warn(
+        `[interaction] Late delivery: snowflakeAge=${snowflakeAgeMs}ms msSinceGatewayPacket=${msSinceGatewayPacket ?? 'n/a'} — ack may fail with 10062 (CPU, network, VPN, duplicate bot process).`,
+      );
     }
 
     if (!ackOk) return;
@@ -382,6 +437,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.error('[interaction]', err);
     const text = 'Something went wrong.';
     await safeReply(interaction, { content: text, flags: MessageFlags.Ephemeral });
+  } finally {
+    interactionCreateInflight.delete(intrId);
+    interactionRecentlyHandledUntil.set(intrId, Date.now() + INTERACTION_RECENT_TTL_MS);
+    pruneStaleInteractionRecent();
   }
 });
 

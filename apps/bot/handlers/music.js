@@ -213,6 +213,7 @@ const IMMEDIATE_END_GRACE_MS = 2500;
 /**
  * Advance queue when the current track slot is done. Excludes `replaced` (new playTrack superseded)
  * and `cleanup` (connection teardown) to avoid double-advance / loops.
+ * `stopped` with an **empty** queue is handled separately (do not re-run idle finalize; stop/skip owns it).
  */
 const TRACK_END_ADVANCE_REASONS = new Set([
   "finished",
@@ -589,6 +590,20 @@ async function handlePlayerTrackEnd(ev, guildId, shoukaku, client) {
     "play:end",
   );
   if (q.length === 0) {
+    // Intentional stop/skip already cleared the queue and will leave voice / edit UI — do not run
+    // finalizeGuildIdle here or we race the button/slash handler (weird panel state, perceived "loop").
+    if (reason === "stopped") {
+      playTrace(
+        guildId,
+        "empty queue + stopped — skip idle finalize (stop/skip owns cleanup)",
+        { reason },
+        "play:end",
+      );
+      lastTrackPlayAt.delete(guildId);
+      refreshVoiceIdleState(guildId, shoukaku, client);
+      return;
+    }
+
     const startedAt = lastTrackPlayAt.get(guildId);
     lastTrackPlayAt.delete(guildId);
 
@@ -1006,9 +1021,10 @@ async function finalizeTrackChoice(
       undefined,
       "play:pick",
     );
-    await interaction.message
-      .edit({
+    await interaction
+      .editReply({
         content: "Voice session ended — run `/play` again.",
+        embeds: [],
         components: [],
       })
       .catch(() => {});
@@ -1025,8 +1041,8 @@ async function finalizeTrackChoice(
       undefined,
       "play:pick",
     );
-    await interaction.message
-      .edit({
+    await interaction
+      .editReply({
         content: `Added to queue: **${track.title}** (position ${q.length})`,
         embeds: [],
         components: [],
@@ -1058,7 +1074,7 @@ async function finalizeTrackChoice(
       "play:pick",
     );
     const payload = await buildPanelPayload(guildId, shoukaku);
-    await interaction.message.edit(payload).catch(() => {});
+    await interaction.editReply(payload).catch(() => {});
     refreshVoiceIdleState(guildId, shoukaku, client);
   } catch (err) {
     console.error("[finalizeTrackChoice]", err);
@@ -1070,8 +1086,8 @@ async function finalizeTrackChoice(
     );
     playerPanels.delete(guildId);
     lastTrackPlayAt.delete(guildId);
-    await interaction.message
-      .edit({ content: formatPlaybackFailure(err), embeds: [], components: [] })
+    await interaction
+      .editReply({ content: formatPlaybackFailure(err), embeds: [], components: [] })
       .catch(() => {});
     refreshVoiceIdleState(guildId, shoukaku, client);
   }
@@ -1121,8 +1137,8 @@ async function handleMusicStringSelect(interaction, shoukaku, client) {
       undefined,
       "play:pick",
     );
-    await interaction.message
-      .edit({
+    await interaction
+      .editReply({
         content: "❌ Selection expired. Please run `/play` again.",
         embeds: [],
         components: [],
@@ -1174,8 +1190,8 @@ async function handleMusicStringSelect(interaction, shoukaku, client) {
       "play:pick",
     );
     pickSessions.delete(nonce);
-    await interaction.message
-      .edit({
+    await interaction
+      .editReply({
         content: "Invalid choice.",
         embeds: [],
         components: [],
