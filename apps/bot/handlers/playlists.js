@@ -13,12 +13,13 @@ const {
   queuedTrackToPlaylistEntry,
 } = require('../lib/lavalink-query');
 const { ensureVoice, playPlaylistInGuild, formatPlaybackFailure } = require('./music');
+const { safeReply, logInteractionAckState } = require('../lib/interaction');
 
 const PL_PICK_PREFIX = 'djrkplpick';
-const PL_PICK_TTL_MS = 2 * 60 * 1000;
+const PL_PICK_TTL_MS = 5 * 60 * 1000;
 const MAX_PICK_OPTIONS = 25;
 
-/** @type {Map<string, { userId: string; playlistId: string; tracks: import('../lib/lavalink-query').QueuedTrack[]; created: number }>} */
+/** @type {Map<string, { userId: string; playlistId: string; tracks: import('../lib/lavalink-query').QueuedTrack[]; createdAt: number }>} */
 const playlistPickSessions = new Map();
 
 function truncate(str, max) {
@@ -34,7 +35,7 @@ function escapeRegex(s) {
 function takePlaylistPickSession(nonce) {
   const row = playlistPickSessions.get(nonce);
   if (!row) return null;
-  if (Date.now() - row.created > PL_PICK_TTL_MS) {
+  if (Date.now() - row.createdAt > PL_PICK_TTL_MS) {
     playlistPickSessions.delete(nonce);
     return null;
   }
@@ -47,12 +48,12 @@ function takePlaylistPickSession(nonce) {
  */
 async function ensureLavalinkForResolve(interaction, shoukaku) {
   if (!interaction.guildId) {
-    await interaction.reply({ content: 'Use this in a server.', flags: MessageFlags.Ephemeral });
+    await safeReply(interaction, { content: 'Use this in a server.', flags: MessageFlags.Ephemeral });
     return null;
   }
   const node = shoukaku.getIdealNode();
   if (!node) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content:
         'No Lavalink node connected. Wait for **`[Lavalink] Node "main" connected`** then try again.',
       flags: MessageFlags.Ephemeral,
@@ -93,32 +94,49 @@ async function handlePlaylistAutocomplete(interaction) {
  * @param {import('shoukaku').Shoukaku} shoukaku
  */
 async function handlePlaylistStringSelect(interaction, shoukaku) {
+  logInteractionAckState(interaction, 'handlePlaylistStringSelect:start');
+
   const prefix = `${PL_PICK_PREFIX}:`;
   if (!interaction.customId.startsWith(prefix)) return;
+
   const nonce = interaction.customId.slice(prefix.length);
   const session = takePlaylistPickSession(nonce);
   if (!session) {
-    await interaction.reply({ content: 'This menu expired. Run `/playlist add` again.', flags: MessageFlags.Ephemeral });
+    await interaction.message
+      .edit({
+        content: '❌ Selection expired. Run `/playlist add` again.',
+        embeds: [],
+        components: [],
+      })
+      .catch(() => {});
     return;
   }
   if (session.userId !== interaction.user.id) {
-    await interaction.reply({ content: 'Only the person who ran `/playlist add` can choose.', flags: MessageFlags.Ephemeral });
+    await interaction
+      .followUp({
+        content: 'Only the person who ran `/playlist add` can choose.',
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => {});
     return;
   }
   const idx = Number.parseInt(interaction.values[0], 10);
   const track = session.tracks[idx];
   if (!track || Number.isNaN(idx)) {
     playlistPickSessions.delete(nonce);
-    await interaction.reply({ content: 'Invalid choice.', flags: MessageFlags.Ephemeral });
+    await interaction.message
+      .edit({ content: 'Invalid choice.', embeds: [], components: [] })
+      .catch(() => {});
     return;
   }
   playlistPickSessions.delete(nonce);
   const node = shoukaku.getIdealNode();
   if (!node) {
-    await interaction.reply({ content: 'Lavalink disconnected.', flags: MessageFlags.Ephemeral });
+    await interaction
+      .followUp({ content: 'Lavalink disconnected.', flags: MessageFlags.Ephemeral })
+      .catch(() => {});
     return;
   }
-  await interaction.deferUpdate();
   try {
     const playlist = await Playlist.findById(session.playlistId);
     if (!playlist || playlist.userId !== interaction.user.id) {
@@ -149,6 +167,7 @@ async function handlePlaylistStringSelect(interaction, shoukaku) {
  * @param {import('discord.js').Client} _client
  */
 async function handlePlaylistCommand(interaction, shoukaku, _client) {
+  logInteractionAckState(interaction, `handlePlaylistCommand:${interaction.options.getSubcommand(false)}`);
   const sub = interaction.options.getSubcommand();
   const userId = interaction.user.id;
 
@@ -156,19 +175,19 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
     await ensureDb();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+    return safeReply(interaction, { content: msg, flags: MessageFlags.Ephemeral });
   }
 
   if (sub === 'create') {
     const name = interaction.options.getString('name', true).trim();
     if (!name) {
-      return interaction.reply({ content: 'Name cannot be empty.', flags: MessageFlags.Ephemeral });
+      return safeReply(interaction, { content: 'Name cannot be empty.', flags: MessageFlags.Ephemeral });
     }
     if (name.length > 100) {
-      return interaction.reply({ content: 'Name must be 100 characters or fewer.', flags: MessageFlags.Ephemeral });
+      return safeReply(interaction, { content: 'Name must be 100 characters or fewer.', flags: MessageFlags.Ephemeral });
     }
     const doc = await Playlist.create({ userId, name, tracks: [] });
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Created playlist **${doc.name}**. Add tracks with \`/playlist add\` (pick this playlist from the autocomplete menu).`,
       flags: MessageFlags.Ephemeral,
     });
@@ -177,7 +196,7 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
   if (sub === 'list') {
     const playlists = await Playlist.find({ userId }).sort({ updatedAt: -1 }).limit(25).lean();
     if (!playlists.length) {
-      return interaction.reply({ content: 'You have no playlists yet. Use `/playlist create`.', flags: MessageFlags.Ephemeral });
+      return safeReply(interaction, { content: 'You have no playlists yet. Use `/playlist create`.', flags: MessageFlags.Ephemeral });
     }
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
@@ -185,23 +204,23 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
       .setDescription(
         playlists.map((p, i) => `${i + 1}. **${truncate(p.name, 80)}** — ${p.tracks?.length ?? 0} tracks`).join('\n')
       );
-    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    return safeReply(interaction, { embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   const playlistId = interaction.options.getString('playlist', true);
   if (!mongoose.Types.ObjectId.isValid(playlistId)) {
-    return interaction.reply({ content: 'Invalid playlist selection. Use the autocomplete menu.', flags: MessageFlags.Ephemeral });
+    return safeReply(interaction, { content: 'Invalid playlist selection. Use the autocomplete menu.', flags: MessageFlags.Ephemeral });
   }
 
   const playlist = await Playlist.findById(playlistId);
   if (!playlist || playlist.userId !== userId) {
-    return interaction.reply({ content: 'Playlist not found.', flags: MessageFlags.Ephemeral });
+    return safeReply(interaction, { content: 'Playlist not found.', flags: MessageFlags.Ephemeral });
   }
 
   if (sub === 'show') {
     const tracks = playlist.tracks || [];
     if (!tracks.length) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: `**${playlist.name}** is empty. Use \`/playlist add\`.`,
         flags: MessageFlags.Ephemeral,
       });
@@ -211,12 +230,12 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
       .setColor(0x57f287)
       .setTitle(playlist.name)
       .setDescription(truncate(lines.join('\n'), 4000));
-    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    return safeReply(interaction, { embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   if (sub === 'delete') {
     await Playlist.deleteOne({ _id: playlistId, userId });
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Deleted playlist **${playlist.name}**.`,
       flags: MessageFlags.Ephemeral,
     });
@@ -227,9 +246,8 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
     if (!voice) return;
     const tracks = playlist.tracks || [];
     if (!tracks.length) {
-      return interaction.reply({ content: 'That playlist is empty.', flags: MessageFlags.Ephemeral });
+      return safeReply(interaction, { content: 'That playlist is empty.', flags: MessageFlags.Ephemeral });
     }
-    await interaction.deferReply();
     try {
       await playPlaylistInGuild({
         guildId: voice.guildId,
@@ -242,7 +260,7 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
       });
     } catch (err) {
       console.error('[playlist play]', err);
-      await interaction.editReply(formatPlaybackFailure(err));
+      await safeReply(interaction, formatPlaybackFailure(err));
     }
     return;
   }
@@ -251,15 +269,14 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
     const node = await ensureLavalinkForResolve(interaction, shoukaku);
     if (!node) return;
     const query = interaction.options.getString('query', true);
-    await interaction.deferReply();
     try {
       const outcome = await resolveQueryToOutcome(node.rest, query);
       if (outcome.kind === 'error') {
-        await interaction.editReply(`**Resolve failed:** ${outcome.message}`);
+        await safeReply(interaction, `**Resolve failed:** ${outcome.message}`);
         return;
       }
       if (outcome.kind === 'empty') {
-        await interaction.editReply('No results for that query. Try a direct URL or a clearer search.');
+        await safeReply(interaction, 'No results for that query. Try a direct URL or a clearer search.');
         return;
       }
       if (outcome.kind === 'pick') {
@@ -269,7 +286,7 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
           userId: interaction.user.id,
           playlistId: String(playlist._id),
           tracks: slice,
-          created: Date.now(),
+          createdAt: Date.now(),
         });
         const options = slice.map((t, i) => {
           const label = truncate(`${i + 1}. ${t.title}`, 100);
@@ -291,24 +308,24 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
           .setDescription(
             `Choose one result for **${truncate(query, 200)}** — only you can confirm.`
           )
-          .setFooter({ text: 'Menu expires after 2 minutes' });
-        await interaction.editReply({ embeds: [embed], content: null, components: [row] });
+          .setFooter({ text: 'Menu expires after 5 minutes' });
+        await safeReply(interaction, { embeds: [embed], content: null, components: [row] });
         return;
       }
       const entry = await queuedTrackToPlaylistEntry(node.rest, outcome.track);
       playlist.tracks.push(entry);
       await playlist.save();
-      await interaction.editReply(
+      await safeReply(interaction, 
         `Added **${entry.title}** to **${playlist.name}** — **${playlist.tracks.length}** tracks total.`
       );
     } catch (err) {
       console.error('[playlist add]', err);
-      await interaction.editReply(formatPlaybackFailure(err));
+      await safeReply(interaction, formatPlaybackFailure(err));
     }
     return;
   }
 
-  return interaction.reply({ content: 'Unknown subcommand.', flags: MessageFlags.Ephemeral });
+  return safeReply(interaction, { content: 'Unknown subcommand.', flags: MessageFlags.Ephemeral });
 }
 
 module.exports = {

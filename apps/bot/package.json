@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "node index.js",
-    "start": "node index.js",
+    "dev": "node register-commands.js && node index.js",
+    "start": "node register-commands.js && node index.js",
     "register-commands": "node register-commands.js"
   },
   "dependencies": {

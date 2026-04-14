@@ -1,4 +1,4 @@
-const { randomBytes } = require("node:crypto");
+const { randomUUID } = require("node:crypto");
 const {
   MessageFlags,
   EmbedBuilder,
@@ -19,6 +19,7 @@ const {
   tracksFromSearchResults,
   urlToQueuedTrack,
 } = require("../lib/lavalink-query");
+const { safeReply, logInteractionAckState } = require("../lib/interaction");
 
 /** @typedef {{ encoded: string; title: string; author?: string; uri?: string }} QueuedTrack */
 
@@ -36,14 +37,47 @@ const playerPanels = new Map();
  */
 const guildQueueTail = new Map();
 
+/** Last time `playTrack` succeeded for a guild (for immediate-end vs real track-end). */
+/** @type {Map<string, number>} */
+const lastTrackPlayAt = new Map();
+
 /** `player.on('end')` handler per Shoukaku player — removed before re-attach (no removeAllListeners). */
 /** @type {WeakMap<import('shoukaku').Player, (ev: unknown) => void>} */
 const playerEndHandlers = new WeakMap();
 
 const BTN = "djrk";
-const PICK_PREFIX = "djrkpick";
-const PICK_TTL_MS = 2 * 60 * 1000;
+/** New menus use this prefix; legacy `djrkpick:` still accepted for old messages. */
+const PICK_PREFIX = "play_pick";
+const LEGACY_PICK_PREFIX = "djrkpick";
+const PICK_TTL_MS = 5 * 60 * 1000;
 const MAX_PICK_OPTIONS = 25;
+
+/** Verbose `/play` + picker logs. Set `BOT_PLAY_TRACE=0` in `.env` to disable. */
+const PLAY_TRACE =
+  process.env.BOT_PLAY_TRACE !== "0" && process.env.BOT_PLAY_TRACE !== "false";
+
+/**
+ * @param {string | undefined} guildId
+ * @param {string} msg
+ * @param {unknown} [extra]
+ * @param {string} [tag]
+ */
+function playTrace(guildId, msg, extra, tag = "play") {
+  if (!PLAY_TRACE) return;
+  const g = guildId ? ` guild=${guildId}` : "";
+  let tail = "";
+  if (extra !== undefined) {
+    try {
+      tail =
+        typeof extra === "object"
+          ? ` ${JSON.stringify(extra)}`
+          : ` ${String(extra)}`;
+    } catch {
+      tail = " [extra: unserializable]";
+    }
+  }
+  console.log(`[${tag}]${g} ${msg}${tail}`);
+}
 
 /**
  * Self-deafen when joining voice: the bot does not receive voice audio from the channel (music still plays out).
@@ -78,6 +112,7 @@ function clearVoiceIdleTimer(guildId) {
  * @param {import('shoukaku').Shoukaku} shoukaku
  */
 function isVoiceSessionIdle(guildId, shoukaku) {
+  if (guildHasPendingMusicPick(guildId)) return false;
   const player = shoukaku.players.get(guildId);
   if (!player) return false;
   const q = queues.get(guildId) || [];
@@ -117,15 +152,23 @@ function refreshVoiceIdleState(guildId, shoukaku, client) {
 }
 
 /** Pending search picks: nonce → who searched + track list (option values are indices only). */
-/** @type {Map<string, { userId: string; guildId: string; tracks: QueuedTrack[]; created: number }>} */
+/** @type {Map<string, { userId: string; guildId: string; tracks: QueuedTrack[]; createdAt: number }>} */
 const pickSessions = new Map();
 
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of pickSessions.entries()) {
-    if (now - val.created > PICK_TTL_MS) pickSessions.delete(key);
+    if (now - val.createdAt > PICK_TTL_MS) pickSessions.delete(key);
   }
 }, 60 * 1000);
+
+/** While `/play` search menu is open the bot has joined voice but has no track yet — do not count as idle. */
+function guildHasPendingMusicPick(guildId) {
+  for (const row of pickSessions.values()) {
+    if (row.guildId === guildId) return true;
+  }
+  return false;
+}
 
 function truncate(str, max) {
   const s = String(str ?? "");
@@ -136,7 +179,7 @@ function truncate(str, max) {
 function takePickSession(nonce) {
   const row = pickSessions.get(nonce);
   if (!row) return null;
-  if (Date.now() - row.created > PICK_TTL_MS) {
+  if (Date.now() - row.createdAt > PICK_TTL_MS) {
     pickSessions.delete(nonce);
     return null;
   }
@@ -152,8 +195,20 @@ function normalizeTrackEndReason(reason) {
   if (typeof reason === "number" || typeof reason === "boolean") {
     return String(reason).toLowerCase();
   }
+  if (typeof reason === "object" && reason !== null && "reason" in reason) {
+    return normalizeTrackEndReason(
+      /** @type {{ reason?: unknown }} */ (reason).reason,
+    );
+  }
   return "";
 }
+
+function noteTrackPlayStarted(guildId) {
+  lastTrackPlayAt.set(guildId, Date.now());
+}
+
+/** If Lavalink ends the track within this window with an empty queue, treat as playback failure (not “queue finished”). */
+const IMMEDIATE_END_GRACE_MS = 2500;
 
 /**
  * Advance queue when the current track slot is done. Excludes `replaced` (new playTrack superseded)
@@ -367,11 +422,18 @@ async function buildPanelPayload(guildId, shoukaku) {
         ? `**${truncate(title, 250)}**`
         : "*Join voice and use `/play` to start.*",
     )
-    .addFields({
-      name: "📋 Queue",
-      value: q.length ? `${q.length} track(s) waiting` : "Empty",
-      inline: false,
-    });
+    .addFields(
+      {
+        name: "📋 Queue",
+        value: q.length ? `${q.length} track(s) waiting` : "Empty",
+        inline: true,
+      },
+      {
+        name: "🔊 Volume",
+        value: playing ? `${player?.volume ?? 100}%` : "—",
+        inline: true,
+      },
+    );
   if (playing && player?.paused)
     embed.setFooter({ text: "Paused — use Resume to continue" });
   const components = player ? createPlayerRows(guildId, player) : [];
@@ -433,7 +495,13 @@ async function formatQueueListContent(guildId, shoukaku) {
  * Stop playback, leave voice, clear panel — queue is already empty or caller cleared it.
  * @param {string} [panelMessage]
  */
-async function finalizeGuildIdle(guildId, shoukaku, client, player, panelMessage) {
+async function finalizeGuildIdle(
+  guildId,
+  shoukaku,
+  client,
+  player,
+  panelMessage,
+) {
   clearVoiceIdleTimer(guildId);
   try {
     await player.stopTrack();
@@ -449,7 +517,8 @@ async function finalizeGuildIdle(guildId, shoukaku, client, player, panelMessage
     await clearPlayerPanel(
       guildId,
       client,
-      panelMessage ?? "⏹ Queue finished — left voice.",
+      panelMessage ??
+        "[v2.1] ⏹ Voice session ended (Queue finished or disconnected).",
     );
   } catch {
     /* ignore */
@@ -471,6 +540,7 @@ async function advanceQueuePlayHead(guildId, shoukaku, client, player) {
       await player.playTrack({
         track: { encoded: playable.encoded },
       });
+      noteTrackPlayStarted(guildId);
       q.shift();
       if (q.length) queues.set(guildId, q);
       else queues.delete(guildId);
@@ -498,18 +568,91 @@ async function advanceQueuePlayHead(guildId, shoukaku, client, player) {
  */
 async function handlePlayerTrackEnd(ev, guildId, shoukaku, client) {
   const reason = normalizeTrackEndReason(ev?.reason);
-  if (!TRACK_END_ADVANCE_REASONS.has(reason)) return;
+  if (!TRACK_END_ADVANCE_REASONS.has(reason)) {
+    playTrace(
+      guildId,
+      `track end ignored (reason not handled): ${reason || String(ev?.reason)}`,
+      undefined,
+      "play:end",
+    );
+    return;
+  }
 
   const player = shoukaku.players.get(guildId);
   if (!player) return;
 
   const q = queues.get(guildId) || [];
+  playTrace(
+    guildId,
+    `track end event`,
+    { reason, queueLength: q.length },
+    "play:end",
+  );
   if (q.length === 0) {
+    const startedAt = lastTrackPlayAt.get(guildId);
+    lastTrackPlayAt.delete(guildId);
+
+    if (reason === "loadfailed") {
+      playTrace(
+        guildId,
+        "empty queue + loadfailed → error panel, stay in voice",
+        undefined,
+        "play:end",
+      );
+      queues.delete(guildId);
+      await clearPlayerPanel(
+        guildId,
+        client,
+        "❌ **Playback failed** (Lavalink could not load this track). Try a **direct YouTube URL**, `scsearch:…`, or update **youtube-plugin** — see `/help`.",
+      );
+      refreshVoiceIdleState(guildId, shoukaku, client);
+      return;
+    }
+
+    if (
+      reason === "finished" &&
+      startedAt !== undefined &&
+      Date.now() - startedAt < IMMEDIATE_END_GRACE_MS
+    ) {
+      playTrace(
+        guildId,
+        `immediate finish (${Date.now() - startedAt}ms since playTrack) → playback failure panel`,
+        undefined,
+        "play:end",
+      );
+      queues.delete(guildId);
+      await clearPlayerPanel(
+        guildId,
+        client,
+        "❌ **Playback stopped immediately** (common with YouTube search or outdated **youtube-plugin**). Try a **direct link** to the video or `scsearch:artist track` — see `/help`.",
+      );
+      refreshVoiceIdleState(guildId, shoukaku, client);
+      return;
+    }
+
+    playTrace(
+      guildId,
+      "empty queue + normal end → finalizeGuildIdle (leave voice)",
+      { reason },
+      "play:end",
+    );
     queues.delete(guildId);
-    await finalizeGuildIdle(guildId, shoukaku, client, player);
+    await finalizeGuildIdle(
+      guildId,
+      shoukaku,
+      client,
+      player,
+      "⏹ Queue finished — left voice.",
+    );
     return;
   }
 
+  playTrace(
+    guildId,
+    `advancing queue (${q.length} waiting)`,
+    undefined,
+    "play:end",
+  );
   await advanceQueuePlayHead(guildId, shoukaku, client, player);
 }
 
@@ -555,11 +698,9 @@ function onBotDisconnectedFromVoice(guildId, client, shoukaku) {
     }
   }
 
-  void clearPlayerPanel(
-    guildId,
-    client,
-    "⏹ Disconnected from voice.",
-  ).catch(() => {});
+  void clearPlayerPanel(guildId, client, "⏹ Disconnected from voice.").catch(
+    () => {},
+  );
   void shoukaku.leaveVoiceChannel(guildId).catch(() => {});
 }
 
@@ -570,7 +711,13 @@ function onBotDisconnectedFromVoice(guildId, client, shoukaku) {
 async function ensureVoice(interaction, shoukaku) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({
+    playTrace(
+      undefined,
+      "ensureVoice: not in a server (no guildId)",
+      undefined,
+      "voice",
+    );
+    await safeReply(interaction, {
       content: "Use this in a server.",
       flags: MessageFlags.Ephemeral,
     });
@@ -578,14 +725,26 @@ async function ensureVoice(interaction, shoukaku) {
   }
   const channel = interaction.member?.voice?.channel;
   if (!channel) {
-    await interaction.reply({
+    playTrace(
+      guildId,
+      "ensureVoice: member not in a voice channel",
+      undefined,
+      "voice",
+    );
+    await safeReply(interaction, {
       content: "Join a voice channel first.",
       flags: MessageFlags.Ephemeral,
     });
     return null;
   }
   if (!channel.isVoiceBased()) {
-    await interaction.reply({
+    playTrace(
+      guildId,
+      "ensureVoice: channel is not voice-based",
+      { channelId: channel.id },
+      "voice",
+    );
+    await safeReply(interaction, {
       content:
         "Join a **voice** or **stage** channel (text channels are not supported).",
       flags: MessageFlags.Ephemeral,
@@ -596,7 +755,13 @@ async function ensureVoice(interaction, shoukaku) {
     interaction.guild ?? interaction.client.guilds.cache.get(guildId);
   const me = guild?.members?.me;
   if (!me) {
-    await interaction.reply({
+    playTrace(
+      guildId,
+      "ensureVoice: bot member not cached yet",
+      undefined,
+      "voice",
+    );
+    await safeReply(interaction, {
       content:
         "Could not verify the bot’s permissions in this server. Try again in a few seconds.",
       flags: MessageFlags.Ephemeral,
@@ -605,7 +770,13 @@ async function ensureVoice(interaction, shoukaku) {
   }
   const perms = channel.permissionsFor(me);
   if (!perms) {
-    await interaction.reply({
+    playTrace(
+      guildId,
+      "ensureVoice: permissionsFor(bot) is null",
+      undefined,
+      "voice",
+    );
+    await safeReply(interaction, {
       content: formatVoicePermissionSetupMessage(
         BOT_VOICE_PERM_REQUIREMENTS.map(([, label]) => label),
         channel.name,
@@ -619,7 +790,13 @@ async function ensureVoice(interaction, shoukaku) {
     ([flag]) => !perms.has(flag),
   ).map(([, label]) => label);
   if (missingVoicePermLabels.length) {
-    await interaction.reply({
+    playTrace(
+      guildId,
+      "ensureVoice: missing voice permissions for bot",
+      missingVoicePermLabels,
+      "voice",
+    );
+    await safeReply(interaction, {
       content: formatVoicePermissionSetupMessage(
         missingVoicePermLabels,
         channel.name,
@@ -631,18 +808,31 @@ async function ensureVoice(interaction, shoukaku) {
   }
   const node = shoukaku.getIdealNode();
   if (!node) {
-    await interaction.reply({
+    playTrace(
+      guildId,
+      "ensureVoice: getIdealNode() is null (no connected Lavalink node)",
+      { nodes: shoukaku.nodes.size },
+      "voice",
+    );
+    await safeReply(interaction, {
       content:
         'No Lavalink node is connected yet. If you just ran `npm run dev`, wait until the terminal shows **Lavalink is ready to accept connections** and the bot logs **`[Lavalink] Node "main" connected`** (or **`ready`**), then try again. Lavalink needs **Java 17+**; check the `[lava]` lines if it exits immediately.',
       flags: MessageFlags.Ephemeral,
     });
     return null;
   }
-  return {
+  const voice = {
     guildId,
     channelId: channel.id,
     shardId: resolveVoiceShardId(interaction),
   };
+  playTrace(
+    guildId,
+    "ensureVoice ok",
+    { channelId: voice.channelId, shardId: voice.shardId, node: node.name },
+    "voice",
+  );
+  return voice;
 }
 
 /**
@@ -701,21 +891,24 @@ async function playPlaylistInGuild(args) {
   queues.set(guildId, [...q, ...restQueued]);
   try {
     const playable = await resolvePlayableEncoded(rest, first);
+    const reply = await interaction.fetchReply();
+    playerPanels.set(guildId, {
+      channelId: reply.channelId,
+      messageId: reply.id,
+    });
     await player.playTrack({ track: { encoded: playable.encoded } });
+    noteTrackPlayStarted(guildId);
   } catch (err) {
     console.error("[playPlaylistInGuild]", err);
     queues.delete(guildId);
+    playerPanels.delete(guildId);
+    lastTrackPlayAt.delete(guildId);
     await interaction.editReply(formatPlaybackFailure(err));
     refreshVoiceIdleState(guildId, shoukaku, client);
     return;
   }
   const payload = await buildPanelPayload(guildId, shoukaku);
   await interaction.editReply(payload);
-  const reply = await interaction.fetchReply();
-  playerPanels.set(guildId, {
-    channelId: reply.channelId,
-    messageId: reply.id,
-  });
   refreshVoiceIdleState(guildId, shoukaku, client);
   if (skipped) {
     await interaction.followUp({
@@ -799,8 +992,20 @@ async function finalizeTrackChoice(
   shoukaku,
   client,
 ) {
+  playTrace(
+    guildId,
+    `finalizeTrackChoice start title=${truncate(track.title, 80)}`,
+    undefined,
+    "play:pick",
+  );
   const player = shoukaku.players.get(guildId);
   if (!player) {
+    playTrace(
+      guildId,
+      "finalizeTrackChoice: no player — session ended",
+      undefined,
+      "play:pick",
+    );
     await interaction.message
       .edit({
         content: "Voice session ended — run `/play` again.",
@@ -814,6 +1019,12 @@ async function finalizeTrackChoice(
     const q = queues.get(guildId) || [];
     q.push(track);
     queues.set(guildId, q);
+    playTrace(
+      guildId,
+      `finalizeTrackChoice: already playing → queue (pos ${q.length})`,
+      undefined,
+      "play:pick",
+    );
     await interaction.message
       .edit({
         content: `Added to queue: **${track.title}** (position ${q.length})`,
@@ -828,16 +1039,37 @@ async function finalizeTrackChoice(
   try {
     attachQueueAdvance(player, guildId, shoukaku, client);
     const playable = await resolvePlayableEncoded(player.node.rest, track);
-    await player.playTrack({ track: { encoded: playable.encoded } });
-    const payload = await buildPanelPayload(guildId, shoukaku);
-    await interaction.message.edit(payload).catch(() => {});
     playerPanels.set(guildId, {
       channelId: interaction.message.channelId,
       messageId: interaction.message.id,
     });
+    playTrace(
+      guildId,
+      "finalizeTrackChoice: playTrack starting",
+      undefined,
+      "play:pick",
+    );
+    await player.playTrack({ track: { encoded: playable.encoded } });
+    noteTrackPlayStarted(guildId);
+    playTrace(
+      guildId,
+      "finalizeTrackChoice: playTrack done → panel edit",
+      undefined,
+      "play:pick",
+    );
+    const payload = await buildPanelPayload(guildId, shoukaku);
+    await interaction.message.edit(payload).catch(() => {});
     refreshVoiceIdleState(guildId, shoukaku, client);
   } catch (err) {
     console.error("[finalizeTrackChoice]", err);
+    playTrace(
+      guildId,
+      `finalizeTrackChoice error: ${err instanceof Error ? err.message : String(err)}`,
+      undefined,
+      "play:pick",
+    );
+    playerPanels.delete(guildId);
+    lastTrackPlayAt.delete(guildId);
     await interaction.message
       .edit({ content: formatPlaybackFailure(err), embeds: [], components: [] })
       .catch(() => {});
@@ -851,47 +1083,114 @@ async function finalizeTrackChoice(
  * @param {import('discord.js').Client} client
  */
 async function handleMusicStringSelect(interaction, shoukaku, client) {
-  const prefix = `${PICK_PREFIX}:`;
-  if (!interaction.customId.startsWith(prefix)) return;
-  const nonce = interaction.customId.slice(prefix.length);
+  logInteractionAckState(interaction, "handleMusicStringSelect:start");
+
+  const cid = interaction.customId;
+  const isOurs =
+    cid.startsWith(`${PICK_PREFIX}:`) || cid.startsWith(`${LEGACY_PICK_PREFIX}:`);
+  if (!isOurs) return;
+
+  let nonce;
+  if (cid.startsWith(`${PICK_PREFIX}:`)) {
+    nonce = cid.slice(PICK_PREFIX.length + 1);
+  } else {
+    nonce = cid.slice(LEGACY_PICK_PREFIX.length + 1);
+  }
+
+  const ageMs =
+    typeof interaction.createdTimestamp === "number"
+      ? Date.now() - interaction.createdTimestamp
+      : -1;
+  playTrace(
+    interaction.guildId ?? undefined,
+    `string select menu customId nonce=${nonce.slice(0, 8)}…`,
+    undefined,
+    "play:pick",
+  );
+
   const session = takePickSession(nonce);
+  if (process.env.BOT_PLAY_TRACE === "1") {
+    console.log(
+      `[play:pick] Session exists: ${Boolean(session)} interactionAge=${ageMs}ms`,
+    );
+  }
   if (!session) {
-    await interaction.reply({
-      content: "This search menu expired. Run `/play` again.",
-      flags: MessageFlags.Ephemeral,
-    });
+    playTrace(
+      interaction.guildId ?? undefined,
+      "takePickSession null (expired or missing)",
+      undefined,
+      "play:pick",
+    );
+    await interaction.message
+      .edit({
+        content: "❌ Selection expired. Please run `/play` again.",
+        embeds: [],
+        components: [],
+      })
+      .catch(() => {});
     return;
   }
   if (
     session.guildId !== interaction.guildId ||
     session.userId !== interaction.user.id
   ) {
-    await interaction.reply({
-      content: "Only the person who ran `/play` can choose a result.",
-      flags: MessageFlags.Ephemeral,
-    });
+    playTrace(
+      session.guildId,
+      "wrong user or guild for pick session",
+      undefined,
+      "play:pick",
+    );
+    await interaction
+      .followUp({
+        content: "Only the person who ran `/play` can choose a result.",
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => {});
     return;
   }
   if (!inSameVoiceAsBot(interaction, shoukaku)) {
-    await interaction.reply({
-      content:
-        "Join the **same voice channel** as the bot. If you already are, wait a second and try again — or run `/play` again from your channel.",
-      flags: MessageFlags.Ephemeral,
-    });
+    playTrace(
+      session.guildId,
+      "user not in same VC as bot",
+      undefined,
+      "play:pick",
+    );
+    await interaction
+      .followUp({
+        content:
+          "Join the **same voice channel** as the bot. If you already are, wait a second and try again — or run `/play` again from your channel.",
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => {});
     return;
   }
   const idx = Number.parseInt(interaction.values[0], 10);
   const track = session.tracks[idx];
   if (!track || Number.isNaN(idx)) {
+    playTrace(
+      session.guildId,
+      `invalid pick index=${idx}`,
+      undefined,
+      "play:pick",
+    );
     pickSessions.delete(nonce);
-    await interaction.reply({
-      content: "Invalid choice.",
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.message
+      .edit({
+        content: "Invalid choice.",
+        embeds: [],
+        components: [],
+      })
+      .catch(() => {});
     return;
   }
   pickSessions.delete(nonce);
-  await interaction.deferUpdate();
+  playTrace(
+    session.guildId,
+    `pick ok index=${idx} title=${truncate(track.title, 80)}`,
+    undefined,
+    "play:pick",
+  );
+
   await finalizeTrackChoice(
     interaction,
     session.guildId,
@@ -909,18 +1208,32 @@ async function lavalinkResolveForPlay(player, query) {
   const resolvedQuery = lavalinkResolveQuery(query);
   const isDirectUrl = /^https?:\/\//i.test(query.trim());
   let res;
+  let source = "rest.resolve";
   if (!isDirectUrl) {
-    const fromSearch = await loadSearchTracks(
-      player.node.rest,
-      resolvedQuery,
-    );
+    const fromSearch = await loadSearchTracks(player.node.rest, resolvedQuery);
     if (fromSearch?.length) {
       res = lavalinkResponseFromTrackList(fromSearch);
+      source = "loadsearch";
     }
   }
   if (!res) {
     res = await player.node.rest.resolve(resolvedQuery);
   }
+  const lt = res?.loadType ?? "?";
+  let n = 0;
+  if (res?.loadType === LoadType.SEARCH && Array.isArray(res.data)) {
+    n = res.data.length;
+  } else if (res?.loadType === LoadType.PLAYLIST && res.data?.tracks) {
+    n = res.data.tracks.length;
+  } else if (res?.data) {
+    n = 1;
+  }
+  playTrace(
+    undefined,
+    `lavalinkResolveForPlay: ${source} loadType=${lt} items≈${n} query=${truncate(resolvedQuery, 80)}`,
+    undefined,
+    "play",
+  );
   return res;
 }
 
@@ -931,13 +1244,19 @@ async function lavalinkResolveForPlay(player, query) {
  * @param {QueuedTrack[]} slice
  */
 async function replyWithTrackPicker(interaction, voice, query, slice) {
-  const nonce = randomBytes(16).toString("hex");
+  const nonce = randomUUID();
   pickSessions.set(nonce, {
     userId: interaction.user.id,
     guildId: voice.guildId,
     tracks: slice,
-    created: Date.now(),
+    createdAt: Date.now(),
   });
+  playTrace(
+    voice.guildId,
+    `showing track picker nonce=${nonce.slice(0, 8)}… options=${slice.length}`,
+    undefined,
+    "play",
+  );
 
   const options = slice.map((t, i) => {
     const num = `${i + 1}. `;
@@ -966,7 +1285,7 @@ async function replyWithTrackPicker(interaction, voice, query, slice) {
         `**${slice.length}** match${slice.length === 1 ? "" : "es"} — use the menu below. ` +
         "Only **you** can confirm.",
     )
-    .setFooter({ text: "Menu expires after 2 minutes" });
+    .setFooter({ text: "Menu expires after 5 minutes" });
   await interaction.editReply({
     embeds: [pickEmbed],
     content: null,
@@ -980,17 +1299,41 @@ async function replyWithTrackPicker(interaction, voice, query, slice) {
  * @param {import('discord.js').Client} client
  */
 async function handlePlay(interaction, shoukaku, client) {
+  logInteractionAckState(interaction, "handlePlay");
+  const ageMs =
+    typeof interaction.createdTimestamp === "number"
+      ? Date.now() - interaction.createdTimestamp
+      : -1;
+  playTrace(
+    interaction.guildId ?? undefined,
+    `/play handler user=${interaction.user.id} age=${ageMs}ms`,
+    undefined,
+    "play",
+  );
+
   const voice = await ensureVoice(interaction, shoukaku);
   if (!voice) return;
 
   const query = interaction.options.getString("query", true);
-  await interaction.deferReply();
+  playTrace(voice.guildId, `query=${truncate(query, 120)}`, undefined, "play");
 
   try {
     let player = shoukaku.players.get(voice.guildId);
     if (player) {
+      playTrace(
+        voice.guildId,
+        "reusing existing player; tryMoveBotToChannel",
+        undefined,
+        "play",
+      );
       tryMoveBotToChannel(shoukaku, voice.guildId, voice.channelId);
     } else {
+      playTrace(
+        voice.guildId,
+        "joinVoiceChannel + attachQueueAdvance",
+        undefined,
+        "play",
+      );
       player = await shoukaku.joinVoiceChannel({
         guildId: voice.guildId,
         channelId: voice.channelId,
@@ -1005,9 +1348,13 @@ async function handlePlay(interaction, shoukaku, client) {
       throw new Error(res.data?.message || "Lavalink error");
     }
     if (res?.loadType === LoadType.EMPTY) {
-      await interaction.editReply(
-        "No results for that search. Try a **direct URL**, a more specific query, or a prefix like `ytsearch:` / `scsearch:` depending on your Lavalink sources.",
+      playTrace(
+        voice.guildId,
+        "branch: EMPTY → no results reply",
+        undefined,
+        "play",
       );
+      await safeReply(interaction, "No results for that search.");
       refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
     }
@@ -1015,11 +1362,23 @@ async function handlePlay(interaction, shoukaku, client) {
     if (res.loadType === LoadType.SEARCH && res.data.length >= 2) {
       const tracks = tracksFromSearchResults(res);
       if (!tracks?.length) {
-        await interaction.editReply("No results for that search.");
+        playTrace(
+          voice.guildId,
+          "branch: SEARCH≥2 but tracksFromSearchResults empty",
+          undefined,
+          "play",
+        );
+        await safeReply(interaction, "No results for that search.");
         refreshVoiceIdleState(voice.guildId, shoukaku, client);
         return;
       }
       const slice = tracks.slice(0, MAX_PICK_OPTIONS);
+      playTrace(
+        voice.guildId,
+        "branch: SEARCH≥2 → track picker",
+        { count: slice.length },
+        "play",
+      );
       await replyWithTrackPicker(interaction, voice, query, slice);
       refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
@@ -1027,9 +1386,13 @@ async function handlePlay(interaction, shoukaku, client) {
 
     const track = firstTrackFromResolve(res);
     if (!track) {
-      await interaction.editReply(
-        "No results for that search. Try a **direct URL**, a more specific query, or a prefix like `ytsearch:` / `scsearch:` depending on your Lavalink sources.",
+      playTrace(
+        voice.guildId,
+        "branch: firstTrackFromResolve null",
+        undefined,
+        "play",
       );
+      await safeReply(interaction, "No results for that search.");
       refreshVoiceIdleState(voice.guildId, shoukaku, client);
       return;
     }
@@ -1039,7 +1402,14 @@ async function handlePlay(interaction, shoukaku, client) {
       const q = queues.get(voice.guildId) || [];
       q.push(track);
       queues.set(voice.guildId, q);
-      await interaction.editReply(
+      playTrace(
+        voice.guildId,
+        `branch: something already playing → queue ${track.title}`,
+        { queuePosition: q.length },
+        "play",
+      );
+      await safeReply(
+        interaction,
         `Added to queue: **${track.title}** (position ${q.length})`,
       );
       await refreshPlayerPanel(voice.guildId, client, shoukaku);
@@ -1047,19 +1417,40 @@ async function handlePlay(interaction, shoukaku, client) {
       return;
     }
 
+    playTrace(
+      voice.guildId,
+      `branch: play now → resolvePlayableEncoded + playTrack`,
+      { title: track.title },
+      "play",
+    );
     const playable = await resolvePlayableEncoded(player.node.rest, track);
-    await player.playTrack({ track: { encoded: playable.encoded } });
-    const payload = await buildPanelPayload(voice.guildId, shoukaku);
-    await interaction.editReply(payload);
     const reply = await interaction.fetchReply();
     playerPanels.set(voice.guildId, {
       channelId: reply.channelId,
       messageId: reply.id,
     });
+    await player.playTrack({ track: { encoded: playable.encoded } });
+    noteTrackPlayStarted(voice.guildId);
+    playTrace(
+      voice.guildId,
+      "playTrack() awaited; building panel + editReply",
+      undefined,
+      "play",
+    );
+    const payload = await buildPanelPayload(voice.guildId, shoukaku);
+    await safeReply(interaction, payload);
     refreshVoiceIdleState(voice.guildId, shoukaku, client);
   } catch (err) {
     console.error("[play]", err);
-    await interaction.editReply(formatPlaybackFailure(err));
+    playTrace(
+      voice.guildId,
+      `catch: ${err instanceof Error ? err.message : String(err)}`,
+      undefined,
+      "play",
+    );
+    playerPanels.delete(voice.guildId);
+    lastTrackPlayAt.delete(voice.guildId);
+    await safeReply(interaction, formatPlaybackFailure(err));
     refreshVoiceIdleState(voice.guildId, shoukaku, client);
   }
 }
@@ -1072,7 +1463,7 @@ async function handlePlay(interaction, shoukaku, client) {
 async function handleStop(interaction, shoukaku, client) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: "Use this in a server.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1086,7 +1477,7 @@ async function handleStop(interaction, shoukaku, client) {
     await shoukaku.leaveVoiceChannel(guildId).catch(() => {});
   }
   await clearPlayerPanel(guildId, client, "⏹ Playback stopped.");
-  await interaction.reply({
+  await safeReply(interaction, {
     content: "Stopped and left voice.",
     flags: MessageFlags.Ephemeral,
   });
@@ -1101,7 +1492,7 @@ async function handlePause(interaction, shoukaku, client) {
   const guildId = interaction.guildId;
   const player = guildId && shoukaku.players.get(guildId);
   if (!player?.track) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Nothing is playing.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1111,7 +1502,7 @@ async function handlePause(interaction, shoukaku, client) {
     await player.setPaused(true);
   } catch (e) {
     console.error("[pause]", e);
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Could not pause.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1119,7 +1510,7 @@ async function handlePause(interaction, shoukaku, client) {
   }
   await refreshPlayerPanel(guildId, client, shoukaku);
   refreshVoiceIdleState(guildId, shoukaku, client);
-  await interaction.reply({
+  await safeReply(interaction, {
     content: "Paused.",
     flags: MessageFlags.Ephemeral,
   });
@@ -1134,7 +1525,7 @@ async function handleResume(interaction, shoukaku, client) {
   const guildId = interaction.guildId;
   const player = guildId && shoukaku.players.get(guildId);
   if (!player) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Not in voice.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1144,7 +1535,7 @@ async function handleResume(interaction, shoukaku, client) {
     await player.setPaused(false);
   } catch (e) {
     console.error("[resume]", e);
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Could not resume.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1152,7 +1543,7 @@ async function handleResume(interaction, shoukaku, client) {
   }
   await refreshPlayerPanel(guildId, client, shoukaku);
   refreshVoiceIdleState(guildId, shoukaku, client);
-  await interaction.reply({
+  await safeReply(interaction, {
     content: "Resumed.",
     flags: MessageFlags.Ephemeral,
   });
@@ -1171,7 +1562,7 @@ async function handleSkip(interaction, shoukaku, client) {
   const q = queues.get(guildId) || [];
 
   if (!player && q.length === 0) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Nothing to skip.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1179,7 +1570,7 @@ async function handleSkip(interaction, shoukaku, client) {
   }
 
   if (!player) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content:
         "Bot is not in voice — join with `/play` first (your queue is not lost in memory until restart).",
       flags: MessageFlags.Ephemeral,
@@ -1194,14 +1585,14 @@ async function handleSkip(interaction, shoukaku, client) {
     refreshVoiceIdleState(guildId, shoukaku, client);
   } catch (err) {
     console.error("[skip]", err);
-    await interaction.reply({
+    await safeReply(interaction, {
       content: "Could not skip this track.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  await interaction.reply({
+  await safeReply(interaction, {
     content: "⏭ Skipped.",
   });
 }
@@ -1215,13 +1606,13 @@ async function handleQueue(interaction, shoukaku) {
   if (!guildId) return;
   const text = await formatQueueListContent(guildId, shoukaku);
   if (text == null) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: "Queue is empty.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
-  await interaction.reply({
+  await safeReply(interaction, {
     content: text,
     flags: MessageFlags.Ephemeral,
   });
@@ -1235,7 +1626,7 @@ async function handleNowPlaying(interaction, shoukaku) {
   const guildId = interaction.guildId;
   const player = guildId && shoukaku.players.get(guildId);
   if (!player?.track) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: "Nothing playing.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1245,12 +1636,12 @@ async function handleNowPlaying(interaction, shoukaku) {
     const decoded = await player.node.rest.decode(player.track);
     const title = decoded?.info?.title || "Unknown";
     const paused = player.paused ? " (paused)" : "";
-    await interaction.reply({
+    await safeReply(interaction, {
       content: `**Now playing:** ${title}${paused}`,
       flags: MessageFlags.Ephemeral,
     });
   } catch {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: "Something is playing (could not decode title).",
       flags: MessageFlags.Ephemeral,
     });
@@ -1275,21 +1666,24 @@ async function musicButtonSetPaused(
 ) {
   const emptyMsg = pause ? "Nothing is playing." : "Nothing to resume.";
   if (!player?.track) {
-    await interaction.reply({ content: emptyMsg, flags: MessageFlags.Ephemeral });
+    await safeReply(interaction, {
+      content: emptyMsg,
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
   try {
     await player.setPaused(pause);
   } catch (e) {
     console.error(pause ? "[pause button]" : "[resume button]", e);
-    await interaction.reply({
+    return safeReply(interaction, {
       content: pause ? "Could not pause." : "Could not resume.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
   const payload = await buildPanelPayload(guildId, shoukaku);
-  await interaction.update(payload);
+  await interaction.editReply(payload);
   refreshVoiceIdleState(guildId, shoukaku, client);
 }
 
@@ -1303,14 +1697,14 @@ async function musicButtonSetPaused(
 async function musicButtonSkip(interaction, guildId, player, shoukaku, client) {
   const q = queues.get(guildId) || [];
   if (!player && q.length === 0) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Nothing to skip.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
   if (!player) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Bot is not in voice — use `/play` from your channel first.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1321,14 +1715,14 @@ async function musicButtonSkip(interaction, guildId, player, shoukaku, client) {
     await drainGuildQueueWork(guildId);
   } catch (e) {
     console.error("[skip button]", e);
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Could not skip.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
   const payload = await buildPanelPayload(guildId, shoukaku);
-  await interaction.update(payload);
+  await interaction.editReply(payload);
   refreshVoiceIdleState(guildId, shoukaku, client);
 }
 
@@ -1341,7 +1735,7 @@ async function musicButtonSkip(interaction, guildId, player, shoukaku, client) {
 async function musicButtonStop(interaction, guildId, player, shoukaku) {
   clearVoiceIdleTimer(guildId);
   if (!player) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Not in voice.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1351,7 +1745,7 @@ async function musicButtonStop(interaction, guildId, player, shoukaku) {
   await player.stopTrack().catch(() => {});
   await shoukaku.leaveVoiceChannel(guildId).catch(() => {});
   playerPanels.delete(guildId);
-  await interaction.update({
+  await interaction.editReply({
     content: "⏹ Stopped and left voice.",
     embeds: [],
     components: [],
@@ -1364,9 +1758,10 @@ async function musicButtonStop(interaction, guildId, player, shoukaku) {
  * @param {import('discord.js').Client} client
  */
 async function handleMusicButton(interaction, shoukaku, client) {
+  logInteractionAckState(interaction, "handleMusicButton");
   const parsed = parseButtonId(interaction.customId);
   if (!parsed?.guildId || parsed.guildId !== interaction.guildId) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content: "Invalid control.",
       flags: MessageFlags.Ephemeral,
     });
@@ -1378,13 +1773,13 @@ async function handleMusicButton(interaction, shoukaku, client) {
   if (action === "queue") {
     const text = await formatQueueListContent(guildId, shoukaku);
     if (text == null) {
-      await interaction.reply({
+      return safeReply(interaction, {
         content: "Queue is empty.",
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
-    await interaction.reply({
+    return safeReply(interaction, {
       content: text,
       flags: MessageFlags.Ephemeral,
     });
@@ -1392,7 +1787,7 @@ async function handleMusicButton(interaction, shoukaku, client) {
   }
 
   if (!inSameVoiceAsBot(interaction, shoukaku)) {
-    await interaction.reply({
+    return safeReply(interaction, {
       content:
         "Join the **same voice channel** as the bot to use these controls. If you already are, try again in a moment (Discord voice state can lag).",
       flags: MessageFlags.Ephemeral,
@@ -1403,11 +1798,25 @@ async function handleMusicButton(interaction, shoukaku, client) {
   const player = shoukaku.players.get(guildId);
 
   if (action === "pause") {
-    await musicButtonSetPaused(interaction, guildId, player, shoukaku, client, true);
+    await musicButtonSetPaused(
+      interaction,
+      guildId,
+      player,
+      shoukaku,
+      client,
+      true,
+    );
     return;
   }
   if (action === "resume") {
-    await musicButtonSetPaused(interaction, guildId, player, shoukaku, client, false);
+    await musicButtonSetPaused(
+      interaction,
+      guildId,
+      player,
+      shoukaku,
+      client,
+      false,
+    );
     return;
   }
   if (action === "skip") {
@@ -1419,7 +1828,7 @@ async function handleMusicButton(interaction, shoukaku, client) {
     return;
   }
 
-  await interaction.reply({
+  await safeReply(interaction, {
     content: "Unknown action.",
     flags: MessageFlags.Ephemeral,
   });
@@ -1481,7 +1890,7 @@ async function handleHelp(interaction) {
     )
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed] });
+  await safeReply(interaction, { embeds: [embed] });
 }
 
 /**
@@ -1490,6 +1899,7 @@ async function handleHelp(interaction) {
  * @param {import('discord.js').Client} client
  */
 async function handleMusicCommand(interaction, shoukaku, client) {
+  logInteractionAckState(interaction, `handleMusicCommand:${interaction.commandName}`);
   switch (interaction.commandName) {
     case "help":
       return handleHelp(interaction);
@@ -1508,7 +1918,7 @@ async function handleMusicCommand(interaction, shoukaku, client) {
     case "nowplaying":
       return handleNowPlaying(interaction, shoukaku);
     default:
-      return interaction.reply({
+      return safeReply(interaction, {
         content: "Unknown command.",
         flags: MessageFlags.Ephemeral,
       });

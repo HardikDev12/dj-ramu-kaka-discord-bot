@@ -14,7 +14,6 @@ class DiscordJSAudioConnector extends Connectors.DiscordJS {
     return shard?.send(payload, important);
   }
 }
-const { registerSlashCommands } = require('./register-commands');
 const {
   handleMusicCommand,
   handleMusicButton,
@@ -30,24 +29,41 @@ const {
   guildInteractionCooldownTier,
   tryConsumeGuildCooldown,
 } = require('./lib/guild-cooldown');
+const { safeReply, safeDeferReply, safeDeferUpdate } = require('./lib/interaction');
+const { ensureDb } = require('./lib/db');
 
-const token = process.env.DISCORD_TOKEN;
+function stripQuotes(s) {
+  if (s == null || typeof s !== 'string') return '';
+  return s.trim().replace(/^["']|["']$/g, '');
+}
+
+const token = stripQuotes(process.env.DISCORD_TOKEN);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
-const lavalinkHost = process.env.LAVALINK_HOST || '127.0.0.1';
-const lavalinkPort = parseInt(process.env.LAVALINK_PORT || '2333', 10);
-const lavalinkPassword = process.env.LAVALINK_PASSWORD || 'youshallnotpass';
+const lavalinkHost = stripQuotes(process.env.LAVALINK_HOST) || '127.0.0.1';
+const lavalinkPort = (() => {
+  const raw = Number.parseInt(stripQuotes(process.env.LAVALINK_PORT) || '2333', 10);
+  if (!Number.isFinite(raw) || raw < 1 || raw > 65535) {
+    console.warn('[Lavalink] Invalid LAVALINK_PORT; using 2333.');
+    return 2333;
+  }
+  return raw;
+})();
+const lavalinkPassword =
+  stripQuotes(process.env.LAVALINK_PASSWORD) || 'youshallnotpass';
 
 /**
  * Wait until Lavalink's REST stack answers (401/200 on /v4/info). Port 2333 can accept TCP
  * before Spring has finished wiring the v4 WebSocket; connecting too early can yield an immediate 1000 close.
+ * Sends the same password as Shoukaku so Lavalink does not log WARN "Authorization missing" on /v4/info.
  */
-function waitForLavalinkHttp(hostname, port, maxWaitMs = 120000) {
+function waitForLavalinkHttp(hostname, port, password, maxWaitMs = 120000) {
   const deadline = Date.now() + maxWaitMs;
   return new Promise((resolve) => {
+    let loggedHttpOk = false;
     const poll = () => {
       if (Date.now() >= deadline) {
         console.warn('[Lavalink] Timed out waiting for /v4/info; connecting Shoukaku anyway.');
@@ -60,10 +76,21 @@ function waitForLavalinkHttp(hostname, port, maxWaitMs = 120000) {
           path: '/v4/info',
           method: 'GET',
           timeout: 2000,
+          headers: {
+            Authorization: password,
+          },
         },
         (res) => {
           res.resume();
-          if (res.statusCode === 401 || res.statusCode === 200) return resolve();
+          if (res.statusCode === 401 || res.statusCode === 200) {
+            if (!loggedHttpOk) {
+              loggedHttpOk = true;
+              console.log(
+                `[Lavalink] REST OK at http://${hostname}:${port}/v4/info — waiting for Shoukaku WebSocket…`,
+              );
+            }
+            return resolve();
+          }
           setTimeout(poll, 300);
         }
       );
@@ -116,9 +143,13 @@ shoukaku.on('error', (nodeName, error) => {
 let lavalinkReadyLogged = false;
 shoukaku.on('ready', (nodeName) => {
   if (lavalinkDownMuted) {
-    console.log(`[Lavalink] Node "${nodeName}" connected.`);
+    console.log(`[Lavalink] Node "${nodeName}" reconnected after Lavalink was unreachable.`);
   } else if (!lavalinkReadyLogged) {
     lavalinkReadyLogged = true;
+    console.log(
+      `[Lavalink] Node "${nodeName}" WebSocket ready — ${lavalinkHost}:${lavalinkPort}. Music commands can resolve/play tracks.`,
+    );
+  } else {
     console.log(`[Lavalink] Node "${nodeName}" ready`);
   }
   lavalinkDownMuted = false;
@@ -136,19 +167,32 @@ if (process.env.SHOUKAKU_DEBUG === '1') {
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot logged in as ${c.user.tag}`);
-  const lavaHttpReady = waitForLavalinkHttp(lavalinkHost, lavalinkPort);
-  try {
-    await registerSlashCommands();
-  } catch (err) {
-    console.error('Slash command registration failed:', err.message);
-    console.error('Fix .env or run: npm run register-commands -w @music-bot/bot');
+  if (process.env.BOT_REGISTER_ON_READY === '1') {
+    try {
+      const { registerSlashCommands } = require('./register-commands');
+      await registerSlashCommands();
+    } catch (err) {
+      console.error('Slash command registration failed:', err.message);
+    }
   }
+  const lavaHttpReady = waitForLavalinkHttp(lavalinkHost, lavalinkPort, lavalinkPassword);
   await lavaHttpReady;
   shoukaku.addNode({
     name: 'main',
     url: `${lavalinkHost}:${lavalinkPort}`,
     auth: lavalinkPassword,
+    secure: false,
   });
+  console.log(
+    `[Lavalink] addNode("main") → ${lavalinkHost}:${lavalinkPort} secure=false, password length=${lavalinkPassword.length} (must match services/lavalink/application.yml → lavalink.server.password). Set SHOUKAKU_DEBUG=1 for Shoukaku wire logs.`,
+  );
+  try {
+    await ensureDb();
+    console.log('[bot] Mongo connected (playlists).');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('[bot] Mongo not ready:', msg);
+  }
 });
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -163,16 +207,7 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
  */
 async function replyGuildCooldown(interaction, retryAfterSec) {
   const msg = `This server is using music commands too quickly. Try again in **${retryAfterSec}**s.`;
-  const flags = MessageFlags.Ephemeral;
-  try {
-    if (interaction.deferred || interaction.replied) {
-      await interaction.followUp({ content: msg, flags });
-      return;
-    }
-    await interaction.reply({ content: msg, flags });
-  } catch {
-    /* ignore */
-  }
+  await safeReply(interaction, { content: msg, flags: MessageFlags.Ephemeral });
 }
 
 async function routeMusicInteraction(interaction) {
@@ -185,7 +220,11 @@ async function routeMusicInteraction(interaction) {
   if (interaction.isButton() && interaction.customId.startsWith('djrk:')) {
     return handleMusicButton(interaction, shoukaku, client);
   }
-  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('djrkpick:')) {
+  if (
+    interaction.isStringSelectMenu() &&
+    (interaction.customId.startsWith('play_pick:') ||
+      interaction.customId.startsWith('djrkpick:'))
+  ) {
     return handleMusicStringSelect(interaction, shoukaku, client);
   }
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('djrkplpick:')) {
@@ -195,9 +234,51 @@ async function routeMusicInteraction(interaction) {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (process.env.BOT_INTERACTION_DEBUG === '1') {
+      const age = Date.now() - interaction.createdTimestamp;
+      const id =
+        interaction.isChatInputCommand() || interaction.isAutocomplete()
+          ? interaction.commandName
+          : 'customId' in interaction
+            ? String(interaction.customId).slice(0, 48)
+            : '';
+      console.log(`[interaction] entry age=${age}ms type=${interaction.type} ${id}`);
+    }
+
     if (interaction.isAutocomplete() && interaction.commandName === 'playlist') {
       await handlePlaylistAutocomplete(interaction);
       return;
+    }
+
+    // ACK before cooldown so rate-limit sync work never burns the 3s window (10062).
+    let ackOk = true;
+    if (interaction.isChatInputCommand()) {
+      const name = interaction.commandName;
+      let deferOpts = { flags: MessageFlags.Ephemeral };
+      if (name === 'play') {
+        deferOpts = {};
+      } else if (name === 'playlist') {
+        const sub = interaction.options.getSubcommand(false);
+        if (sub === 'play' || sub === 'add') deferOpts = {};
+      }
+      ackOk = await safeDeferReply(interaction, deferOpts);
+    } else if (interaction.isButton() && interaction.customId.startsWith('djrk:')) {
+      ackOk = await safeDeferUpdate(interaction);
+    } else if (interaction.isStringSelectMenu()) {
+      const cid = interaction.customId;
+      if (
+        cid.startsWith('play_pick:') ||
+        cid.startsWith('djrkpick:') ||
+        cid.startsWith('djrkplpick:')
+      ) {
+        ackOk = await safeDeferUpdate(interaction);
+      }
+    }
+
+    if (!ackOk) return;
+
+    if (process.env.BOT_INTERACTION_DEBUG === '1') {
+      console.log('ACK TIME:', Date.now() - interaction.createdTimestamp, 'ms');
     }
 
     const cdTier = guildInteractionCooldownTier(interaction);
@@ -213,19 +294,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (err) {
     console.error('[interaction]', err);
     const text = 'Something went wrong.';
-    try {
-      if (interaction.isAutocomplete()) {
-        await interaction.respond([]);
-      } else if (interaction.deferred && !interaction.replied) {
-        await interaction.editReply(text);
-      } else if (interaction.replied) {
-        await interaction.followUp({ content: text, flags: MessageFlags.Ephemeral });
-      } else {
-        await interaction.reply({ content: text, flags: MessageFlags.Ephemeral });
-      }
-    } catch {
-      /* ignore */
-    }
+    await safeReply(interaction, { content: text, flags: MessageFlags.Ephemeral });
   }
 });
 
