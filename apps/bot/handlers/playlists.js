@@ -15,7 +15,7 @@ const {
 const { ensureVoice, playPlaylistInGuild, formatPlaybackFailure } = require('./music');
 
 const PL_PICK_PREFIX = 'djrkplpick';
-const PL_PICK_TTL_MS = 10 * 60 * 1000;
+const PL_PICK_TTL_MS = 2 * 60 * 1000;
 const MAX_PICK_OPTIONS = 25;
 
 /** @type {Map<string, { userId: string; playlistId: string; tracks: import('../lib/lavalink-query').QueuedTrack[]; created: number }>} */
@@ -290,7 +290,8 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
           .setTitle(`Add to: ${truncate(playlist.name, 200)}`)
           .setDescription(
             `Choose one result for **${truncate(query, 200)}** — only you can confirm.`
-          );
+          )
+          .setFooter({ text: 'Menu expires after 2 minutes' });
         await interaction.editReply({ embeds: [embed], content: null, components: [row] });
         return;
       }
