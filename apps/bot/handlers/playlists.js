@@ -241,7 +241,7 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
     });
   }
 
-  if (sub === 'play') {
+  if (sub === 'load') {
     const voice = await ensureVoice(interaction, shoukaku);
     if (!voice) return;
     const tracks = playlist.tracks || [];
@@ -259,7 +259,7 @@ async function handlePlaylistCommand(interaction, shoukaku, _client) {
         tracks,
       });
     } catch (err) {
-      console.error('[playlist play]', err);
+      console.error('[playlist load]', err);
       await safeReply(interaction, formatPlaybackFailure(err));
     }
     return;

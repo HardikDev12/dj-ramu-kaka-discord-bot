@@ -1,8 +1,9 @@
 const path = require('path');
 const http = require('http');
+const https = require('https');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Events, MessageFlags, SnowflakeUtil } = require('discord.js');
 const { Shoukaku, Connectors } = require('shoukaku');
 
 /** Shoukaku's stock connector uses `shards.get(shardId)` only; a key mismatch drops OP 4 silently and voice never completes. */
@@ -31,10 +32,53 @@ const {
 } = require('./lib/guild-cooldown');
 const { safeReply, safeDeferReply, safeDeferUpdate } = require('./lib/interaction');
 const { ensureDb } = require('./lib/db');
+const { TIME_SYNC_MULTILINE } = require('./lib/time-sync-hint');
 
 function stripQuotes(s) {
   if (s == null || typeof s !== 'string') return '';
   return s.trim().replace(/^["']|["']$/g, '');
+}
+
+/**
+ * Compare local `Date.now()` to Discord's HTTP `Date` (UTC). Works on Windows and Linux; same check for dev + VPS.
+ */
+function warnIfSystemClockDriftFromDiscord() {
+  return new Promise((resolve) => {
+    const req = https.request(
+      'https://discord.com/api/v10/gateway',
+      { method: 'GET', timeout: 6000 },
+      (res) => {
+        const dateHeader = res.headers.date;
+        res.resume();
+        if (!dateHeader) {
+          resolve();
+          return;
+        }
+        const serverMs = Date.parse(dateHeader);
+        if (!Number.isFinite(serverMs)) {
+          resolve();
+          return;
+        }
+        const driftMs = Date.now() - serverMs;
+        if (Math.abs(driftMs) > 2500) {
+          const sec = Math.round(Math.abs(driftMs) / 1000);
+          const direction = driftMs > 0 ? 'ahead of' : 'behind';
+          console.warn(
+            `[bot] **System clock drift:** local time is about ${sec}s ${direction} Discord’s servers (HTTP Date). ` +
+              'Slash defer/reply will fail with **10062** until the clock is fixed.\n' +
+              TIME_SYNC_MULTILINE,
+          );
+        }
+        resolve();
+      },
+    );
+    req.on('error', () => resolve());
+    req.on('timeout', () => {
+      req.destroy();
+      resolve();
+    });
+    req.end();
+  });
 }
 
 const token = stripQuotes(process.env.DISCORD_TOKEN);
@@ -167,6 +211,7 @@ if (process.env.SHOUKAKU_DEBUG === '1') {
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot logged in as ${c.user.tag}`);
+  await warnIfSystemClockDriftFromDiscord();
   if (process.env.BOT_REGISTER_ON_READY === '1') {
     try {
       const { registerSlashCommands } = require('./register-commands');
@@ -210,6 +255,18 @@ async function replyGuildCooldown(interaction, retryAfterSec) {
   await safeReply(interaction, { content: msg, flags: MessageFlags.Ephemeral });
 }
 
+/** When INTERACTION_CREATE hits the gateway (local time); used to separate clock skew from real delay. */
+const rawInteractionReceivedAt = new Map();
+const MAX_RAW_INTERACTION_TRACK = 80;
+
+function noteRawInteractionCreate(id) {
+  if (rawInteractionReceivedAt.size >= MAX_RAW_INTERACTION_TRACK) {
+    const oldest = rawInteractionReceivedAt.keys().next().value;
+    rawInteractionReceivedAt.delete(oldest);
+  }
+  rawInteractionReceivedAt.set(id, Date.now());
+}
+
 async function routeMusicInteraction(interaction) {
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'playlist') {
@@ -232,22 +289,44 @@ async function routeMusicInteraction(interaction) {
   }
 }
 
+client.on(Events.Raw, (packet) => {
+  if (packet.t === 'INTERACTION_CREATE' && packet.d?.id) {
+    noteRawInteractionCreate(packet.d.id);
+  }
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    if (process.env.BOT_INTERACTION_DEBUG === '1') {
-      const age = Date.now() - interaction.createdTimestamp;
-      const id =
-        interaction.isChatInputCommand() || interaction.isAutocomplete()
-          ? interaction.commandName
-          : 'customId' in interaction
-            ? String(interaction.customId).slice(0, 48)
-            : '';
-      console.log(`[interaction] entry age=${age}ms type=${interaction.type} ${id}`);
-    }
+    // Discord invalidates the interaction token if the first response is not sent within ~3s
+    // (see https://docs.discord.com/developers/interactions/receiving-and-responding ). Defer ASAP.
+    const now = Date.now();
+    const snowflakeAgeMs = now - SnowflakeUtil.timestampFrom(interaction.id);
+    const rawAt = rawInteractionReceivedAt.get(interaction.id);
+    rawInteractionReceivedAt.delete(interaction.id);
+    const msSinceGatewayPacket = rawAt == null ? null : now - rawAt;
 
     if (interaction.isAutocomplete() && interaction.commandName === 'playlist') {
       await handlePlaylistAutocomplete(interaction);
       return;
+    }
+
+    // Snowflake time is UTC from Discord; Date.now() is local clock. If OS clock is fast, snowflakeAge looks huge
+    // even though the gateway packet just arrived (msSinceGatewayPacket small).
+    const likelyClockSkew =
+      msSinceGatewayPacket != null &&
+      msSinceGatewayPacket < 200 &&
+      snowflakeAgeMs > 2000;
+
+    if (likelyClockSkew) {
+      console.warn(
+        `[interaction] Snowflake age ${snowflakeAgeMs}ms but gateway packet was ${msSinceGatewayPacket}ms ago — ` +
+          '**local clock is skewed vs UTC** (snowflake age is inflated). Fix:\n' +
+          TIME_SYNC_MULTILINE,
+      );
+    } else if (snowflakeAgeMs > 2500 && (msSinceGatewayPacket == null || msSinceGatewayPacket >= 200)) {
+      console.warn(
+        `[interaction] Late delivery: snowflakeAge=${snowflakeAgeMs}ms msSinceGatewayPacket=${msSinceGatewayPacket ?? 'n/a'} — ack may fail with 10062 (CPU, network, VPN, duplicate bot process).`,
+      );
     }
 
     // ACK before cooldown so rate-limit sync work never burns the 3s window (10062).
@@ -259,11 +338,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         deferOpts = {};
       } else if (name === 'playlist') {
         const sub = interaction.options.getSubcommand(false);
-        if (sub === 'play' || sub === 'add') deferOpts = {};
+        if (sub === 'load' || sub === 'add') deferOpts = {};
       }
-      ackOk = await safeDeferReply(interaction, deferOpts);
+      ackOk = await safeDeferReply(interaction, deferOpts, { likelyClockSkew });
     } else if (interaction.isButton() && interaction.customId.startsWith('djrk:')) {
-      ackOk = await safeDeferUpdate(interaction);
+      ackOk = await safeDeferUpdate(interaction, { likelyClockSkew });
     } else if (interaction.isStringSelectMenu()) {
       const cid = interaction.customId;
       if (
@@ -271,14 +350,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
         cid.startsWith('djrkpick:') ||
         cid.startsWith('djrkplpick:')
       ) {
-        ackOk = await safeDeferUpdate(interaction);
+        ackOk = await safeDeferUpdate(interaction, { likelyClockSkew });
       }
     }
 
     if (!ackOk) return;
 
     if (process.env.BOT_INTERACTION_DEBUG === '1') {
-      console.log('ACK TIME:', Date.now() - interaction.createdTimestamp, 'ms');
+      const id =
+        interaction.isChatInputCommand() || interaction.isAutocomplete()
+          ? interaction.commandName
+          : 'customId' in interaction
+            ? String(interaction.customId).slice(0, 48)
+            : '';
+      console.log(
+        `[interaction] snowflakeAge=${snowflakeAgeMs}ms rawPacket=${msSinceGatewayPacket ?? 'n/a'}ms type=${interaction.type} ${id} | ack at ${Date.now() - SnowflakeUtil.timestampFrom(interaction.id)}ms`,
+      );
     }
 
     const cdTier = guildInteractionCooldownTier(interaction);

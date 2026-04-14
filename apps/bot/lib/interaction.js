@@ -3,6 +3,7 @@
  */
 
 const { MessageFlags } = require('discord.js');
+const { TIME_SYNC_INLINE } = require('./time-sync-hint');
 
 /**
  * TEMP: log ack state for interaction timing bugs. Set BOT_INTERACTION_DEBUG=1 in `.env`.
@@ -51,18 +52,24 @@ async function safeReply(interaction, options) {
 }
 
 /**
+ * @typedef {{ likelyClockSkew?: boolean }} InteractionTimingHint
+ * When gateway packet is fresh but snowflake age is huge, local PC clock is likely ahead of UTC — do not trust `Date.now()-createdTimestamp`.
+ */
+
+/**
  * Safe deferUpdate for component interactions.
  * @param {import('discord.js').MessageComponentInteraction} interaction
+ * @param {InteractionTimingHint} [timing]
  * @returns {Promise<boolean>} True if successful
  */
-async function safeDeferUpdate(interaction) {
+async function safeDeferUpdate(interaction, timing) {
   try {
     if (interaction.deferred || interaction.replied) return true;
     const age =
       typeof interaction.createdTimestamp === 'number'
         ? Date.now() - interaction.createdTimestamp
         : 0;
-    if (age > 2500) {
+    if (age > 2500 && !timing?.likelyClockSkew) {
       console.warn('[safeDeferUpdate] Interaction old before defer (may 10062):', age, 'ms');
     }
     await interaction.deferUpdate();
@@ -79,7 +86,10 @@ async function safeDeferUpdate(interaction) {
       typeof interaction.createdTimestamp === 'number'
         ? Date.now() - interaction.createdTimestamp
         : -1;
-    const ageHint = code === 10062 ? ` interactionAge=${ageMs}ms` : '';
+    let ageHint = code === 10062 ? ` interactionAge=${ageMs}ms` : '';
+    if (code === 10062 && timing?.likelyClockSkew) {
+      ageHint += ` | If gateway was fresh, ${TIME_SYNC_INLINE}`;
+    }
     if (code !== 40060 && code !== 10062) {
       console.error('[safeDeferUpdate]', label, err);
     } else {
@@ -93,16 +103,17 @@ async function safeDeferUpdate(interaction) {
  * Safe deferReply to prevent expiration or double-acknowledgement.
  * @param {import('discord.js').RepliableInteraction} interaction
  * @param {import('discord.js').InteractionDeferReplyOptions} [options]
+ * @param {InteractionTimingHint} [timing]
  * @returns {Promise<boolean>} True if successful
  */
-async function safeDeferReply(interaction, options) {
+async function safeDeferReply(interaction, options, timing) {
   try {
     if (interaction.deferred || interaction.replied) return true;
     const age =
       typeof interaction.createdTimestamp === 'number'
         ? Date.now() - interaction.createdTimestamp
         : 0;
-    if (age > 2500) {
+    if (age > 2500 && !timing?.likelyClockSkew) {
       console.warn('[safeDeferReply] Interaction old before defer (may 10062):', age, 'ms');
     }
     await interaction.deferReply(options);
@@ -119,7 +130,10 @@ async function safeDeferReply(interaction, options) {
       typeof interaction.createdTimestamp === 'number'
         ? Date.now() - interaction.createdTimestamp
         : -1;
-    const ageHint = code === 10062 ? ` interactionAge=${ageMs}ms` : '';
+    let ageHint = code === 10062 ? ` interactionAge=${ageMs}ms` : '';
+    if (code === 10062 && timing?.likelyClockSkew) {
+      ageHint += ` | ${TIME_SYNC_INLINE}`;
+    }
     if (code !== 40060 && code !== 10062) {
       console.error('[safeDeferReply]', label, err);
     } else {

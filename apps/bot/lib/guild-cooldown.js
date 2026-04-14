@@ -43,7 +43,7 @@ function tierFromChatCommand(interaction) {
   if (!interaction.isChatInputCommand()) return null;
   if (interaction.commandName === "playlist") {
     const sub = interaction.options.getSubcommand(false);
-    return sub === "add" || sub === "play" ? "heavy" : null;
+    return sub === "add" || sub === "load" ? "heavy" : null;
   }
   const name = interaction.commandName;
   if (name === "help" || name === "queue" || name === "nowplaying") return null;

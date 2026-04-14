@@ -1869,7 +1869,7 @@ async function handleHelp(interaction) {
     "`/playlist create` `name` — New empty list.\n" +
     "`/playlist list` — Your playlists and track counts.\n" +
     "`/playlist add` — Autocomplete **playlist** + `query` (URL or search; menu if several results).\n" +
-    "`/playlist show` / `delete` / `play` — Inspect, remove, or queue the whole list (**play**: join voice first).\n" +
+    "`/playlist show` / `delete` / `load` — Inspect, remove, or queue the whole list (**load**: join voice first).\n" +
     "**Web:** use **Login / Register** on the site (email or Discord) → **Playlists** — same MongoDB as the API.\n" +
     "**Discord login** uses your **Discord user id** (matches these slash commands). **Email** accounts use a separate id for playlists.";
 

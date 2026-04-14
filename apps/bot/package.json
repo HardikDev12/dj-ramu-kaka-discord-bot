@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "node register-commands.js && node index.js",
     "start": "node register-commands.js && node index.js",
-    "register-commands": "node register-commands.js"
+    "register-commands": "node register-commands.js",
+    "clear-global-commands": "node clear-global-commands.js"
   },
   "dependencies": {
     "@music-bot/db": "0.0.0",

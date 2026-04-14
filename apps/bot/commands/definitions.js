@@ -4,7 +4,9 @@ const { SlashCommandBuilder } = require('discord.js');
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play from URL or search (plain text = YouTube search; multiple hits show a picker)')
+    .setDescription(
+      'URL or search — YouTube by default; use scsearch: for SoundCloud; picker if several match',
+    )
     .addStringOption((o) =>
       o.setName('query').setDescription('URL, or search text — pick from list when several match').setRequired(true)
     )
@@ -60,8 +62,8 @@ const commands = [
     )
     .addSubcommand((sc) =>
       sc
-        .setName('play')
-        .setDescription('Load every track from a playlist into the queue (join voice first)')
+        .setName('load')
+        .setDescription('Queue every track from a saved playlist (join voice first; not the same as /play)')
         .addStringOption((o) =>
           o.setName('playlist').setDescription('Which playlist').setRequired(true).setAutocomplete(true)
         )
